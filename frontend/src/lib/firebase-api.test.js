@@ -162,3 +162,26 @@ describe('display name', () => {
     expect(fb.calls.filter(c => c.url.includes('/userdata/')).length).toBe(1)   // cached
   })
 })
+
+describe('tracker payload', () => {
+  it('reads only the payload field of userdata/, and never writes there', async () => {
+    const base = fb.fetch
+    _setTestHooks({ fetch: async (url, init) => {
+      if (url.includes('/userdata/')) {
+        fb.calls.push({ url, init })
+        const f = url.includes('mask.fieldPaths=payload') ? { payload: { stringValue: '{"workouts":[]}' } } : { displayName: { stringValue: 'Seda' } }
+        return { ok: true, status: 200, json: async () => ({ fields: f }) }
+      }
+      return base(url, init)
+    } })
+    await post('/api/login/password', { name: 'uye@x.com', password: 'dogru' })
+    expect(await firebaseApi('/api/tracker')).toEqual({ payload: '{"workouts":[]}' })
+    const ud = fb.calls.filter(c => c.url.includes('/userdata/'))
+    expect(ud.every(c => !c.init.method || c.init.method === 'GET')).toBe(true)
+    expect(ud.some(c => c.url.includes('/userdata/U1?mask.fieldPaths=payload'))).toBe(true)
+  })
+  it('answers null when the member has no tracker document', async () => {
+    await post('/api/login/password', { name: 'uye@x.com', password: 'dogru' })
+    expect(await firebaseApi('/api/tracker')).toEqual({ payload: null })
+  })
+})

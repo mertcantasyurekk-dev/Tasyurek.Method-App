@@ -14,6 +14,17 @@ Sunucu yok. Uygulama GitHub Pages'te statik olarak çalışır ve Firebase'e (Au
 - `.github/workflows/pages.yml`: Firebase modunda derleyip Pages'e yayınlar. GIF'ler tracker reposundan gelir.
 - Docker/ghcr yayın ve mirror iş akışları kaldırıldı.
 
+## Eski Tracker'dan aktarma
+
+Ayarlar → Veriler → **Eski Tracker'dan aktar**. Her üye kendi hesabında yapar.
+`userdata/{uid}.payload` sadece okunur (alan maskesiyle), asla yazılmaz.
+
+- Aktif programın günleri rutin olur (sadece ilk aktarmada). "8-10" → çift progresyon, ısınma setleri → `warmupSets`, RIR ve not → hareket notu.
+- Antrenmanlar ve günlük kilolar openGym'in `mergeImport`'undan geçer: burada zaten antrenmanı olan gün atlanır, tekrar aktarmak hiçbir şeyi çoğaltmaz.
+- Hareket adı kütüphane adıyla **birebir** aynıysa kütüphaneye bağlanır, değilse koçun yazdığı adla kullanıcı hareketi olur (yanlış eşleşme geçmişi bozmasın diye bulanık eşleştirme yok).
+- Beslenme, su, uyku, kardiyo ve ölçüler henüz aktarılmıyor.
+- Kod: `frontend/src/lib/tracker-import.js`, `frontend/src/components/TrackerImport.jsx`.
+
 ## Veri
 
 Her üye için `ogstate/{uid}` belgesi: `state` (JSON metni), `rev` (sayı), `email`, `updatedAt`.

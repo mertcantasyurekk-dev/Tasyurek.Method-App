@@ -30,6 +30,8 @@ import { ServerSyncSection, KeptChangesRows, leaveServer, connectServer, passkey
 import { passwordOn, PasswordRow, openPasswordSignIn, openPasswordRegister } from '../components/PasswordAuth.jsx'
 import { usePasskeys, PasskeysRow, DeviceLinkRow } from '../components/Passkeys.jsx'
 import { Section, Row, SelectRow, Switch, Segmented, Button, TextField } from '../components/ui.jsx'
+import { FIREBASE } from '../lib/firebase-api.js'
+import { importFromTracker } from '../components/TrackerImport.jsx'
 
 export default function Settings() {
   const nav = useNavigate()
@@ -543,6 +545,8 @@ export default function Settings() {
 
     {/* ---------- data: fill it, bring things over, back it up, wipe it ---------- */}
     <Section title={t('Data')}>
+      {FIREBASE && <Row icon="shuffle" iconTint="var(--acc)" title="Eski Tracker'dan aktar"
+        subtitle="Programın, antrenman geçmişin ve kilo kayıtların" accessory="chevron" onClick={importFromTracker} />}
       <Row icon="sparkles" iconTint="var(--acc)" title={t('Load starter plan')} accessory="chevron" onClick={starterPlanSheet} />
       <Row icon="shuffle" iconTint="var(--teal)" title={t('Import from another app')}
         subtitle={t('FitNotes, Strong, Hevy — or body weight from Apple Health')}

@@ -222,6 +222,16 @@ export async function firebaseApi(path, init = {}) {
       const a = await idToken()
       return putData(a, body)
     }
+    case 'GET /api/tracker': {
+      // The old tracker's payload, for the one-way import (lib/tracker-import.js). Read with a
+      // field mask; this file never writes to userdata/.
+      const a = await idToken()
+      const url = `${DOCS()}/userdata/${encodeURIComponent(a.uid)}?mask.fieldPaths=payload`
+      const { r, body: d } = await jsonFetch(url, { headers: { Authorization: 'Bearer ' + a.idToken } })
+      if (r.status === 404) return { payload: null }
+      if (!r.ok) throw err(r.status, d?.error?.message || 'read failed')
+      return { payload: d?.fields?.payload?.stringValue || null }
+    }
     case 'POST /api/activity':
       return { ok: true }   // the "who is training now" heartbeat has nobody to tell here
     default:
