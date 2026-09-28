@@ -11,6 +11,7 @@ import { Button, Segmented } from '../components/ui.jsx'
 import { askAddDeviceData } from '../sheets.jsx'
 import { passwordOn, PasswordRegisterForm, openPasswordSignIn } from '../components/PasswordAuth.jsx'
 import { openDeviceLinkRedeem } from '../components/Passkeys.jsx'
+import { FIREBASE } from '../lib/firebase-api.js'
 
 function RegisterSheet({ close }) {
   const { setUser, pushState, pullState, loadConfig } = useStore()
@@ -93,6 +94,17 @@ export default function Login() {
       <div className="dim small" style={{ marginTop: 22, lineHeight: 1.6 }}>
         <a href={REPO} target="_blank" rel="noopener">{t('Self-host it in a minute →')}</a>
       </div>
+    </div>
+  )
+
+  // Taşyürek Method (Firebase build): members get their account from the coach, so the only way
+  // in is e-mail + password. No passkeys, no sign-up, no device codes, no guest profile.
+  if (FIREBASE) return (
+    <div className="narrow" style={wrap}>
+      {head}
+      <div className="muted" style={{ marginBottom: 34 }}>Taşyürek Method</div>
+      <Button variant="primary" icon="key" onClick={() => openPasswordSignIn()}>{t('Sign in with password')}</Button>
+      <div className="dim small" style={{ marginTop: 26, lineHeight: 1.5 }}>Koçunun verdiği e-posta ve şifreyle giriş yap.</div>
     </div>
   )
 
