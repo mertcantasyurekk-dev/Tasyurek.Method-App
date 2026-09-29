@@ -144,6 +144,8 @@ async function readCombined(a) {
   const p = await readPlan(a)
   const rev = p.rev * REV_SPAN + og.rev
   const state = p.plan ? applyPlan(og.state ? og.state : { lang: 'tr' }, p.plan) : og.state
+  // A coached member's sessions start from the coach's prescription, never from their last session.
+  if (state && state.startFrom === 'last') state.startFrom = 'plan'
   if (state) state._rev = rev
   return { og, planRev: p.rev, rev, state }
 }

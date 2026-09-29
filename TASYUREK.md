@@ -22,6 +22,10 @@ AGPL'in istediği bildirimler Ayarlar'ın en altındaki **Açık kaynak lisansla
 (`components/Licenses.jsx`): orijinal telif, lisans, garanti yok ifadesi ve bu reponun kaynak kodu.
 Bu bağlantı ve orijinal telif satırı kaldırılmamalıdır.
 
+## Firebase derlemesinde herkes için kapalı
+
+Salonda giriş (üyelik QR kartları, `/checkin`), başlangıç planları, başka uygulamalardan içe aktarma, güncellemeler.
+
 ## Koçlu üye kilidi
 
 `lib/coached.js`: `isCoached(user)` = Firebase derlemesi ve admin değil. Koçlu üye:
@@ -30,6 +34,8 @@ Bu bağlantı ve orijinal telif satırı kaldırılmamalıdır.
   seansa rutin ekleme, yeniden adlandırma yok. Serbest antrenman yok (başlatma ve geçmişe kayıtta).
 - Egzersizler'de kendi hareketini oluşturamaz, plana ekleyemez.
 - Ayarlar'da sadece çıkış, tracker'dan aktarma ve yedeği dışa aktarma; içe aktarma ve sıfırlama yok.
+- Kilo hedefi koyamaz (Ana sayfa ve İstatistik'te "Hedef" yok); hedef çizgisi sadece koç koyarsa görünür.
+- "Planlı seansların çıkış noktası" ayarı yok ve her zaman koçun reçetesi (`startFrom: 'plan'`); adaptör zorlar.
 - Başka günün rutinini seçmek (hasta olunca vb.) serbest: sadece koçun rutinleri arasında seçim.
 Admin (koç) tam uygulamayı kullanır. AI Koç Firebase derlemesinde zaten kapalıdır (`/api/config` koç bilgisi göndermez).
 

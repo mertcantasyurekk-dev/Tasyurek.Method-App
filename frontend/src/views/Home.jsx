@@ -129,7 +129,7 @@ export default function Home() {
 
     {/* Jump to the gym check-in cards (QR membership codes). Shown here as a quick tap on
         arrival at the gym; folds away per user via the "Gym check-in" switch in Settings. */}
-    {S.checkIn !== false && (
+    {!FIREBASE && S.checkIn !== false && (
       <div className="card tappable" style={{ cursor: 'pointer' }} {...tappable(() => nav('/checkin'))}>
         <div className="row between">
           <div className="row" style={{ gap: 9 }}>
@@ -150,8 +150,9 @@ export default function Home() {
           <span className="lrow-i"><Icon name="sparkles" /></span>
           <div className="big" style={{ fontSize: 22 }}>{t('Welcome!')}</div>
         </div>
-        {!coached && <div className="muted small" style={{ marginBottom: 12 }}>{t('Set up your weekly routine to get going — or load a ready-made starter plan.')}</div>}
-        {coached ? <div className="muted small">Koçun programını hazırlıyor. Hazır olduğunda burada ve Programım sekmesinde görünecek.</div> : <>
+        {!coached && <div className="muted small" style={{ marginBottom: 12 }}>{FIREBASE ? 'Rutinlerini Plan sekmesinde oluştur; üyelere Koç panelinden atarsın.' : t('Set up your weekly routine to get going — or load a ready-made starter plan.')}</div>}
+        {coached ? <div className="muted small">Koçun programını hazırlıyor. Hazır olduğunda burada ve Programım sekmesinde görünecek.</div>
+        : FIREBASE ? <Button variant="primary" icon="plus" onClick={() => nav('/plan')}>Plan sekmesinde rutin oluştur</Button> : <>
         <Button variant="primary" icon="sparkles" onClick={starterPlanSheet}>{t('Load starter plan')}</Button>
         <div style={{ height: 8 }} /><Button onClick={() => nav('/plan')}>{t('Build my own plan')}</Button></>}
       </div>
@@ -161,7 +162,7 @@ export default function Home() {
       <div className="row between bw-head" style={{ marginBottom: 6 }}>
         <h2 style={{ margin: 0 }}>{t('Body weight')}</h2>
         <div className="row" style={{ gap: 8 }}>
-          <Button size="sm" icon="target" style={S.targetW ? { color: 'var(--yellow)' } : undefined} onClick={goalSheet}>{S.targetW ? fmtNum(S.targetW) : t('Goal')}</Button>
+          {!coached && <Button size="sm" icon="target" style={S.targetW ? { color: 'var(--yellow)' } : undefined} onClick={goalSheet}>{S.targetW ? fmtNum(S.targetW) : t('Goal')}</Button>}
           <Button size="sm" icon="plus" onClick={() => bwSheet()}>{t('Log')}</Button>
         </div>
       </div>

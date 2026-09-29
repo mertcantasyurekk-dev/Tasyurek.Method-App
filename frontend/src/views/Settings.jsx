@@ -393,11 +393,11 @@ export default function Settings() {
           options={[{ value: MONDAY, label: t('Monday') }, { value: SUNDAY, label: t('Sunday') }]}
           value={weekStartOf(S)} onChange={v => update(s => { s.weekStart = v })} />
       </Row>
-      {/* Membership QR codes on Home (views/CheckIn.jsx); off = no Home card, no route. */}
+      {!FIREBASE && <>      {/* Membership QR codes on Home (views/CheckIn.jsx); off = no Home card, no route. */}
       <Row icon="qr" iconTint="var(--blue)" title={t('Gym check-in')}
         subtitle={t('Show a card on Home with your membership QR codes.')}>
         <Switch checked={S.checkIn !== false} onChange={v => update(s => { s.checkIn = v })} />
-      </Row>
+      </Row></>}
       {/* The Home summary is optional; hiding it leaves weight logging, history and Stats intact. */}
       <Row icon="scale" iconTint="var(--green)" title={t('Body weight')}
         subtitle={t('Show the body weight card on Home.')}>
@@ -427,12 +427,12 @@ export default function Settings() {
           the routine is what you said you would do, and history and progression decide the
           weight. The other choice is the old behaviour, reps carried over from last time.
           Absent (an older profile) reads as the plan. */}
-      <SelectRow icon="clipboard" iconTint="var(--acc)" title={t('Planned sessions start from')}
+      {!coached && <SelectRow icon="clipboard" iconTint="var(--acc)" title={t('Planned sessions start from')}
         value={S.startFrom === 'last' ? 'last' : 'plan'} onChange={v => update(s => { s.startFrom = v })}
         options={[
           { value: 'plan', label: t('Your plan'), subtitle: t('The routine’s sets and reps. Your history decides the weight.') },
           { value: 'last', label: t('Your last session'), subtitle: t('The reps you logged last time in that routine, carried over.') },
-        ]} />
+        ]} />}
       {/* The line under each exercise that the rows are held against (#173). Tapping the line in
           a workout switches it too; this is where the choice can be found without knowing that. */}
       <SelectRow icon="history" iconTint="var(--blue)" title={t('Shown under each exercise')}

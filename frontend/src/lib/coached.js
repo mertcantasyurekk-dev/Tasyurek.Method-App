@@ -5,5 +5,5 @@ import { useStore } from '../store/useStore.js'
 import { FIREBASE } from './firebase-api.js'
 
 export const isCoached = user => FIREBASE && !!user && !user.admin
-export const coachedNow = () => isCoached(useStore.getState().user)
+export const coachedNow = () => isCoached(useStore.getState?.()?.user)
 export const useCoached = () => useStore(s => isCoached(s.user))

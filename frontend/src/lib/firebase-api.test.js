@@ -301,3 +301,15 @@ describe('coach plan', () => {
     expect(one.plan).toBeNull()
   })
 })
+
+describe('coached prescription', () => {
+  it('a member always starts from the plan; the coach keeps their own choice', async () => {
+    await post('/api/login/password', { name: 'uye@x.com', password: 'dogru' })
+    await put({ state: { workouts: [], startFrom: 'last' }, baseRev: 0 })
+    expect((await firebaseApi('/api/data')).state.startFrom).toBe('plan')
+    await post('/api/logout', {})
+    await post('/api/login/password', { name: 'mertcan.tasyurekk@gmail.com', password: 'a' })
+    await put({ state: { workouts: [], startFrom: 'last' }, baseRev: 0 })
+    expect((await firebaseApi('/api/data')).state.startFrom).toBe('last')
+  })
+})

@@ -183,7 +183,7 @@ function Shell() {
               <Route path="/home" element={<Home />} />
               {/* Gym check-in — switched off in Settings, the route falls through to the
                   catch-all redirect below. */}
-              {S.checkIn !== false && <Route path="/checkin" element={<CheckIn />} />}
+              {!FIREBASE && S.checkIn !== false && <Route path="/checkin" element={<CheckIn />} />}
               <Route path="/plan" element={coached ? <CoachedPlan /> : <Plan />} />
               {FIREBASE && user?.admin && <Route path="/panel" element={<CoachPanel />} />}
               {FIREBASE && user?.admin && <Route path="/panel/:uid" element={<CoachMember />} />}

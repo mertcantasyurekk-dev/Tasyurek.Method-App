@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useCoached } from '../lib/coached.js'   // Taşyürek: the goal is the coach's to set
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
 import { EXIDX, matchExercise, betterWeight } from '../lib/exercises.js'
@@ -288,6 +289,7 @@ function EffortCard({ S }) {
 
 // Stats = the analytics hub: all charts, progress and history live here.
 export default function Stats() {
+  const coached = useCoached()
   const nav = useNavigate()
   const S = useStore(s => s.S)
   const [range, setRange] = useState(90)
@@ -484,7 +486,7 @@ export default function Stats() {
         <div className="row between bw-head" style={{ marginBottom: 8 }}>
           <h2 style={{ margin: 0 }}>{t('Body weight')}</h2>
           <div className="row" style={{ gap: 8 }}>
-            <Button size="sm" icon="target" style={S.targetW ? { color: 'var(--yellow)' } : undefined} onClick={goalSheet}>{S.targetW ? fmtNum(S.targetW) : t('Goal')}</Button>
+            {!coached && <Button size="sm" icon="target" style={S.targetW ? { color: 'var(--yellow)' } : undefined} onClick={goalSheet}>{S.targetW ? fmtNum(S.targetW) : t('Goal')}</Button>}
             <Button size="sm" icon="plus" onClick={() => bwSheet()}>{t('Log')}</Button>
           </div>
         </div>

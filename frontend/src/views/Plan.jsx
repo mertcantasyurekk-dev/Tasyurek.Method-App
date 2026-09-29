@@ -123,7 +123,7 @@ export default function Plan() {
         </div>}
         <Icon name="chevronRight" className="chev" /></SwipeToDelete>)}</div> : <>
         <div className="empty"><div className="ico"><Icon name="clipboard" /></div>{t('No routines yet.')}<br />{t('Create one or load the starter plan.')}</div>
-        <Button icon="sparkles" onClick={starterPlanSheet}>{t('Load starter plan')}</Button>
+        {!import.meta.env?.VITE_FIREBASE && <Button icon="sparkles" onClick={starterPlanSheet}>{t('Load starter plan')}</Button>}
       </>}
     </div></div>
   </>
