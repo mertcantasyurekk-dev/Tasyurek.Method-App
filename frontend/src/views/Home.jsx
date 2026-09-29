@@ -6,6 +6,7 @@ import { fmtNum, fmtDate, todayISO, isoOf, weekKey, weekStartOf, weekDayOffset, 
 import { t, dateLocale } from '../lib/i18n.js'
 import { useCoached } from '../lib/coached.js'   // Taşyürek
 import { FIREBASE } from '../lib/firebase-api.js'
+import NutritionCard from '../components/NutritionCard.jsx'
 import { bwSheet, goalSheet, dayOverrideSheet, calendarSheet, startFlow, starterPlanSheet, bwDeltaColor, weighInsSheet } from '../sheets.jsx'
 import LineChart from '../components/LineChart.jsx'
 import Icon from '../components/Icon.jsx'
@@ -115,6 +116,9 @@ export default function Home() {
         </Button>
       </div>}
     </div>
+
+    {/* Taşyürek: today's macros, kcal and water against the coach's targets. */}
+    {FIREBASE && <NutritionCard />}
 
     {/* Taşyürek: the coach's way into the panel, at the top of Home. */}
     {FIREBASE && user?.admin && <div className="card tappable" style={{ cursor: 'pointer' }} {...tappable(() => nav('/panel'))}>

@@ -116,12 +116,11 @@ const planUrl = uid => `${DOCS()}/coachplan/${encodeURIComponent(uid)}`
 
 async function readPlan(a, uid = a.uid) {
   const { r, body } = await jsonFetch(planUrl(uid), { headers: { Authorization: 'Bearer ' + a.idToken } })
-  if (r.status === 404) return { exists: false, plan: null, rev: 0, updateTime: null }
+  if (r.status === 404) return { exists: false, plan: null, targets: null, rev: 0, updateTime: null }
   if (!r.ok) throw err(r.status, body?.error?.message || 'plan read failed')
   const f = body.fields || {}
-  let plan = null
-  try { plan = f.plan?.stringValue ? JSON.parse(f.plan.stringValue) : null } catch { plan = null }
-  return { exists: true, plan, rev: Number(f.rev?.integerValue || 0), updateTime: body.updateTime }
+  const json = v => { try { return v?.stringValue ? JSON.parse(v.stringValue) : null } catch { return null } }
+  return { exists: true, plan: json(f.plan), targets: json(f.targets), rev: Number(f.rev?.integerValue || 0), updateTime: body.updateTime }
 }
 
 // The member's copy with the coach's program in place of their own routines and week.
@@ -143,7 +142,13 @@ async function readCombined(a) {
   if (isAdmin(a)) return { og, planRev: 0, rev: og.rev, state: og.state }
   const p = await readPlan(a)
   const rev = p.rev * REV_SPAN + og.rev
-  const state = p.plan ? applyPlan(og.state ? og.state : { lang: 'tr' }, p.plan) : og.state
+  let state = og.state
+  if (p.exists) {
+    state = state || { lang: 'tr' }
+    if (p.plan) applyPlan(state, p.plan)
+    // The coach's nutrition targets: the member sees them, never sets them.
+    if (p.targets) state.coachTargets = p.targets; else delete state.coachTargets
+  }
   // A coached member's sessions start from the coach's prescription, never from their last session.
   if (state && state.startFrom === 'last') state.startFrom = 'plan'
   if (state) state._rev = rev
@@ -255,7 +260,7 @@ async function coachMembers(a) {
   const [users, states, plans] = await Promise.all([
     listDocs(a, 'userdata', ['displayName', 'email']),
     listDocs(a, CFG.collection),
-    listDocs(a, 'coachplan', ['rev'])
+    listDocs(a, 'coachplan', ['planAt', 'targets'])
   ])
   const og = new Map(states.map(d => [d.id, d]))
   const pl = new Map(plans.map(d => [d.id, d]))
@@ -269,7 +274,8 @@ async function coachMembers(a) {
         name: u.fields.displayName?.stringValue || email.split('@')[0] || u.id,
         joined: !!st,                                   // has opened the new app
         ...summaryOf(st ? parseState(st.fields) : null),
-        planAt: pl.get(u.id)?.updateTime || null
+        planAt: pl.get(u.id)?.fields?.planAt?.timestampValue || null,
+        hasTargets: !!pl.get(u.id)?.fields?.targets
       }
     })
     .sort((x, y) => x.name.localeCompare(y.name, 'tr'))
@@ -280,7 +286,7 @@ async function coachMember(a, uid) {
   if (!r.ok && r.status !== 404) throw err(r.status, body?.error?.message || 'read failed')
   const state = r.ok ? parseState(body.fields || {}) : null
   const p = await readPlan(a, uid)
-  return { state, plan: p.plan, planRev: p.rev }
+  return { state, plan: p.plan, targets: p.targets, planRev: p.rev, trackerTargets: await trackerTargetsOf(a, uid) }
 }
 
 const cleanPlan = plan => {
@@ -305,12 +311,12 @@ async function coachPutPlan(a, body) {
   const pre = cur.exists ? 'currentDocument.updateTime=' + encodeURIComponent(cur.updateTime) : 'currentDocument.exists=false'
   const text = JSON.stringify(plan)
   if (text.length > MAX_STATE_BYTES) throw err(413, 'plan too large')
-  const mask = ['plan', 'rev', 'updatedAt', 'by'].map(f => 'updateMask.fieldPaths=' + f).join('&')
+  const mask = ['plan', 'planAt', 'rev', 'updatedAt', 'by'].map(f => 'updateMask.fieldPaths=' + f).join('&')
   const { r, body: res } = await jsonFetch(`${planUrl(uid)}?${mask}&${pre}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + a.idToken },
     body: JSON.stringify({ fields: {
-      plan: { stringValue: text }, rev: { integerValue: String(cur.rev + 1) },
+      plan: { stringValue: text }, planAt: { timestampValue: plan.updatedAt }, rev: { integerValue: String(cur.rev + 1) },
       updatedAt: { timestampValue: plan.updatedAt }, by: { stringValue: a.email || '' }
     } })
   })
@@ -319,6 +325,53 @@ async function coachPutPlan(a, body) {
     throw err(r.status, res?.error?.message || 'plan write failed')
   }
   return { ok: true, rev: cur.rev + 1, plan }
+}
+
+// What the old tracker had (targets, customMacroTargets), so the coach can start from there.
+async function trackerTargetsOf(a, uid) {
+  try {
+    const { r, body } = await jsonFetch(`${DOCS()}/userdata/${encodeURIComponent(uid)}?mask.fieldPaths=payload`, { headers: { Authorization: 'Bearer ' + a.idToken } })
+    const pl = r.ok && body?.fields?.payload?.stringValue ? JSON.parse(body.fields.payload.stringValue) : null
+    if (!pl) return null
+    const cm = pl.customMacroTargets || {}, t = pl.targets || {}
+    const set = x => (x && (x.protein || x.carbs || x.fat) ? { p: x.protein, c: x.carbs, f: x.fat } : null)
+    return { training: set(cm.trainingDay) || set(t), rest: set(cm.offDay), water: t.water || null, sleep: t.sleep || null }
+  } catch { return null }
+}
+
+// Sane bounds, the same the tracker's 360° import used: 0 < P ≤ 500, C ≤ 1000, F ≤ 300.
+export function cleanTargets(t) {
+  const num = (v, max) => { const x = parseFloat(String(v ?? '').replace(',', '.')); return isFinite(x) && x > 0 && x <= max ? Math.round(x * 10) / 10 : null }
+  const set = s => {
+    if (!s) return null
+    const o = { p: num(s.p, 500), c: num(s.c, 1000), f: num(s.f, 300) }
+    return o.p && o.c && o.f ? o : null
+  }
+  const out = { training: set(t?.training), rest: set(t?.rest), water: num(t?.water, 10), sleep: num(t?.sleep, 14) }
+  if (!out.training && !out.rest) throw err(400, 'En az bir makro seti gerekli (P, K ve Y dolu olmalı)')
+  return out
+}
+
+async function coachPutTargets(a, body) {
+  const uid = String(body?.uid || '')
+  if (!uid) throw err(400, 'uid required')
+  const targets = { ...cleanTargets(body.targets), updatedAt: new Date().toISOString() }
+  const cur = await readPlan(a, uid)
+  const pre = cur.exists ? 'currentDocument.updateTime=' + encodeURIComponent(cur.updateTime) : 'currentDocument.exists=false'
+  const mask = ['targets', 'rev', 'updatedAt', 'by'].map(f => 'updateMask.fieldPaths=' + f).join('&')
+  const { r, body: res } = await jsonFetch(`${planUrl(uid)}?${mask}&${pre}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + a.idToken },
+    body: JSON.stringify({ fields: {
+      targets: { stringValue: JSON.stringify(targets) }, rev: { integerValue: String(cur.rev + 1) },
+      updatedAt: { timestampValue: targets.updatedAt }, by: { stringValue: a.email || '' }
+    } })
+  })
+  if (!r.ok) {
+    if (r.status === 400 && /FAILED_PRECONDITION/.test(res?.error?.status || '')) throw err(409, 'Hedefler bu arada değişti — tekrar aç')
+    throw err(r.status, res?.error?.message || 'targets write failed')
+  }
+  return { ok: true, rev: cur.rev + 1, targets }
 }
 
 async function asCoach() {
@@ -401,6 +454,8 @@ export async function firebaseApi(path, init = {}) {
       if (!uid) throw err(400, 'uid required')
       return coachMember(await asCoach(), uid)
     }
+    case 'PUT /api/coach/targets':
+      return coachPutTargets(await asCoach(), body)
     case 'PUT /api/coach/plan':
       return coachPutPlan(await asCoach(), body)
     case 'POST /api/activity':

@@ -313,3 +313,52 @@ describe('coached prescription', () => {
     expect((await firebaseApi('/api/data')).state.startFrom).toBe('last')
   })
 })
+
+describe('coach targets', () => {
+  const asCoach = () => post('/api/login/password', { name: 'mertcan.tasyurekk@gmail.com', password: 'a' })
+  const asMember = () => post('/api/login/password', { name: 'uye@x.com', password: 'dogru' })
+  const putT = (uid, targets) => firebaseApi('/api/coach/targets', { method: 'PUT', body: JSON.stringify({ uid, targets }) })
+  const putPlan = (uid, plan) => firebaseApi('/api/coach/plan', { method: 'PUT', body: JSON.stringify({ uid, plan }) })
+  const PLAN = { routines: [{ id: 'cA', name: 'A', ex: [] }], week: { 1: ['cA'] } }
+
+  it('the member sees the targets; plan and targets never overwrite each other', async () => {
+    await asCoach()
+    const w = await putT('U1', { training: { p: '180', c: 250, f: '60,5' }, rest: { p: 180, c: 150, f: 70 }, water: 3, sleep: 8 })
+    expect(w.targets).toMatchObject({ training: { p: 180, c: 250, f: 60.5 }, rest: { c: 150 }, water: 3, sleep: 8 })
+    await putPlan('U1', PLAN)
+    await putT('U1', { training: { p: 170, c: 240, f: 60 } })
+    await post('/api/logout', {})
+    await asMember()
+    const d = await firebaseApi('/api/data')
+    expect(d.state.coachTargets).toMatchObject({ training: { p: 170 }, rest: null })
+    expect(d.state.routines.map(r => r.id)).toEqual(['cA'])
+    expect(d.rev).toBe(3000000)
+  })
+
+  it('targets alone (no program yet) still reach the member', async () => {
+    await asCoach(); await putT('U1', { rest: { p: 150, c: 150, f: 50 } }); await post('/api/logout', {})
+    await asMember()
+    const d = await firebaseApi('/api/data')
+    expect(d.state.coachTargets.rest).toEqual({ p: 150, c: 150, f: 50 })
+    expect(d.state.routines).toBeUndefined()
+    const { members } = await (async () => { await post('/api/logout', {}); await asCoach(); return firebaseApi('/api/coach/members') })().catch(() => ({ members: [] }))
+    expect(Array.isArray(members)).toBe(true)
+  })
+
+  it('refuses nonsense and non-coaches', async () => {
+    await asCoach()
+    await expect(putT('U1', { training: { p: 900, c: 200, f: 50 } })).rejects.toMatchObject({ status: 400 })
+    await expect(putT('U1', { training: { p: 180, c: 200 } })).rejects.toMatchObject({ status: 400 })
+    await post('/api/logout', {}); await asMember()
+    await expect(putT('U1', { training: { p: 180, c: 200, f: 60 } })).rejects.toMatchObject({ status: 403 })
+  })
+
+  it('offers the old tracker\'s targets to start from', async () => {
+    const payload = { targets: { protein: 150, carbs: 200, fat: 55, water: 3, sleep: 7.5 }, customMacroTargets: { trainingDay: { protein: 180, carbs: 250, fat: 60 }, offDay: { protein: 180, carbs: 150, fat: 70 } } }
+    fb.docs.set('userdata/U1', { fields: { payload: { stringValue: JSON.stringify(payload) } }, updateTime: 'x' })
+    await asCoach()
+    const one = await firebaseApi('/api/coach/member?uid=U1')
+    expect(one.trackerTargets).toEqual({ training: { p: 180, c: 250, f: 60 }, rest: { p: 180, c: 150, f: 70 }, water: 3, sleep: 7.5 })
+    expect(one.targets).toBeNull()
+  })
+})

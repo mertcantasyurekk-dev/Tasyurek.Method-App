@@ -158,3 +158,29 @@ describe('with a coach plan', () => {
     expect(r.weights).toBe(2)
   })
 })
+
+describe('nutrition from the tracker', () => {
+  it('brings day totals, water and sleep once, and never over what the app already has', () => {
+    const payload = { daily: {
+      '2026-09-01': { weight: '84', protein: 150, carbs: '200,5', fat: 60, water: 2.5, sleep: 7 },
+      '2026-09-02': { protein: 0, water: 3 },
+      '2026-09-03': { notes: 'x' },
+      'bozuk': { protein: 100 }
+    } }
+    const conv = convertTracker(payload)
+    expect(conv.nutrition.map(n => n.d)).toEqual(['2026-09-01', '2026-09-02'])
+    expect(conv.nutrition[0].item).toMatchObject({ id: 'tt-2026-09-01', p: 150, c: 200.5, f: 60 })
+    expect(conv.nutrition[1].item).toBeNull()
+    const S = clone(DEF)
+    S.nutrition = { '2026-09-02': { items: [{ id: 'mine', p: 30 }], water: 1, _ts: 1 } }
+    const r = applyTrackerImport(S, conv, { now: 'T' })
+    expect(r.days).toBe(1)                                          // 09-02 already had its own water
+    expect(S.nutrition['2026-09-01']).toMatchObject({ water: 2.5, sleep: 7 })
+    expect(S.nutrition['2026-09-01'].items).toHaveLength(1)
+    expect(S.nutrition['2026-09-02'].water).toBe(1)                 // the app's own value stays
+    expect(S.nutrition['2026-09-02'].items.map(i => i.id)).toEqual(['mine'])
+    const again = applyTrackerImport(S, convertTracker(payload), { now: 'T2' })
+    expect(again.days).toBe(0)
+    expect(S.nutrition['2026-09-01'].items).toHaveLength(1)
+  })
+})

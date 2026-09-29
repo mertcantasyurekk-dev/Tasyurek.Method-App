@@ -15,6 +15,8 @@ import Icon from '../components/Icon.jsx'
 import { glyphOf } from '../lib/glyphs.js'
 import { Section, Row, Button, Check, SelectRow } from '../components/ui.jsx'
 import { tappable } from '../lib/use-sheet-keyboard.js'
+import { TargetsForm } from '../components/NutritionCard.jsx'
+import { totalsOf, kcalOf } from '../lib/nutrition.js'
 
 const toast = m => useUI.getState().toast(m)
 const clone = o => JSON.parse(JSON.stringify(o))
@@ -153,6 +155,8 @@ export function CoachMember() {
       </div>
     </Section>
 
+    <NutritionSection uid={uid} name={info.name} m={m} st={st} onSaved={load} />
+
     <Section title="Son antrenmanlar">
       {workouts.length ? workouts.slice(0, 8).map(w => {
         const sets = (w.entries || []).reduce((n, e) => n + (e.sets || []).filter(s => s.done).length, 0)
@@ -231,3 +235,53 @@ function AssignSheet({ uid, name, plan, onSaved, close }) {
 }
 
 export const assignSheet = props => useUI.getState().openSheet(close => <AssignSheet {...props} close={close} />)
+
+/* ------------------------------------------------------------------ nutrition ------------------- */
+
+const setLine = s => (s ? `P ${fmtNum(s.p)} · K ${fmtNum(s.c)} · Y ${fmtNum(s.f)} · ${fmtNum(kcalOf(s))} kcal` : '—')
+
+// The last seven days the member logged anything, averaged: what they eat against what they were given.
+export function weekAverage(st, today = todayISO()) {
+  const from = new Date(today + 'T12:00:00'); from.setDate(from.getDate() - 6)
+  const fromIso = from.toISOString().slice(0, 10)
+  const days = Object.entries(st?.nutrition || {}).filter(([d, v]) => d >= fromIso && d <= today && (v?.items || []).length)
+  if (!days.length) return null
+  const sum = days.reduce((a, [, v]) => { const t = totalsOf(v); return { p: a.p + t.p, c: a.c + t.c, f: a.f + t.f, water: a.water + (v.water || 0) } }, { p: 0, c: 0, f: 0, water: 0 })
+  const k = days.length
+  const avg = { p: sum.p / k, c: sum.c / k, f: sum.f / k }
+  return { days: k, ...avg, kcal: kcalOf(avg), water: sum.water / k }
+}
+
+function NutritionSection({ uid, name, m, st, onSaved }) {
+  const T = m.targets
+  const avg = weekAverage(st)
+  return <Section title="Beslenme" footer={T ? `Son güncelleme: ${fmtDate(T.updatedAt.slice(0, 10), true)}` : 'Henüz hedef yok. Üye girdiklerini yine de kaydeder.'}>
+    <Row icon="barbell" title="Antrenman günü" subtitle={setLine(T?.training)} />
+    <Row icon="moon" title="Dinlenme günü" subtitle={setLine(T?.rest)} />
+    <Row icon="drop" title="Su · uyku" value={T ? `${T.water ? fmtNum(T.water) + ' L' : '—'} · ${T.sleep ? fmtNum(T.sleep) + ' sa' : '—'}` : '—'} />
+    <Row icon="chartLine" title="Son 7 gün ortalaması" subtitle={avg ? `${avg.days} gün kayıt · ${setLine(avg)}${avg.water ? ' · su ' + fmtNum(Math.round(avg.water * 10) / 10) + ' L' : ''}` : 'Kayıt yok'} />
+    <div style={{ padding: '10px 14px 14px' }}>
+      <Button variant="primary" icon="pencil" onClick={() => targetsSheet({ uid, name, initial: T || m.trackerTargets, fromTracker: !T && !!m.trackerTargets, onSaved })}>
+        {T ? 'Hedefleri düzenle' : 'Hedef belirle'}</Button>
+    </div>
+  </Section>
+}
+
+function TargetsSheet({ uid, name, initial, fromTracker, onSaved, close }) {
+  const [busy, setBusy] = useState(false)
+  const save = async targets => {
+    setBusy(true)
+    try {
+      await api('/api/coach/targets', { method: 'PUT', body: JSON.stringify({ uid, targets }) })
+      toast(`${name} için hedefler kaydedildi`); close(); onSaved && onSaved()
+    } catch (e) { toast(e.data?.error || e.message || 'Kaydedilemedi') } finally { setBusy(false) }
+  }
+  return <>
+    <h3>{name} — beslenme hedefleri</h3>
+    <div className="muted small" style={{ marginBottom: 12 }}>{fromTracker ? 'Eski tracker\'daki hedeflerle dolduruldu. Kontrol edip kaydet.' : 'Antrenman ve dinlenme günü için ayrı makro setleri. Üye gün tipine göre doğru seti görür.'}</div>
+    <TargetsForm initial={initial} busy={busy} onSave={save} />
+    <div style={{ height: 8 }} />
+    <Button variant="ghost" className="dim" onClick={close}>{t('Cancel')}</Button>
+  </>
+}
+export const targetsSheet = props => useUI.getState().openSheet(close => <TargetsSheet {...props} close={close} />)

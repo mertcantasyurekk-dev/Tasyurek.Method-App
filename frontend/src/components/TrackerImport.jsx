@@ -17,12 +17,13 @@ export async function importFromTracker() {
   const conv = convertTracker(payload, S.customEx || [])
   const first = !S.trackerImport
   const nR = first && !S.coachPlanAt ? conv.routines.length : 0
-  if (!nR && !conv.workouts.length && !conv.bodyweight.length) { toast('Tracker\'da aktarılacak veri bulunamadı.'); return }
+  if (!nR && !conv.workouts.length && !conv.bodyweight.length && !conv.nutrition?.length) { toast('Tracker\'da aktarılacak veri bulunamadı.'); return }
 
   const lines = [
     nR ? `${nR} antrenman günü rutin olarak eklenecek${conv.programName ? ` (${conv.programName})` : ''}.` : '',
     conv.workouts.length ? `${conv.workouts.length} antrenman kaydı. Burada zaten antrenmanı olan günler atlanır.` : '',
     conv.bodyweight.length ? `${conv.bodyweight.length} kilo kaydı.` : '',
+    conv.nutrition?.length ? `${conv.nutrition.length} günlük beslenme kaydı (makro, su, uyku).` : '',
     S.coachPlanAt ? 'Programın koçun tarafından atandığı için tracker\'daki rutinler aktarılmayacak.' : first ? '' : 'Rutinler daha önce aktarıldığı için tekrar eklenmeyecek.'
   ].filter(Boolean)
   const message = <>
@@ -40,7 +41,8 @@ export async function importFromTracker() {
       const parts = [
         res.routines ? `${res.routines} rutin` : '',
         res.workouts ? `${res.workouts} antrenman` : '',
-        res.weights ? `${res.weights} kilo kaydı` : ''
+        res.weights ? `${res.weights} kilo kaydı` : '',
+        res.days ? `${res.days} gün beslenme` : ''
       ].filter(Boolean)
       toast(parts.length ? `Aktarıldı: ${parts.join(', ')}` : 'Yeni kayıt yok — hepsi zaten burada.')
     }

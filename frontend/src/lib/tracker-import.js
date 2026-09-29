@@ -7,7 +7,8 @@
 //                                       already has a workout here is skipped, so importing twice
 //                                       never duplicates anything)
 //   - daily weights                   → body weight, through mergeImport as well
-// Nutrition, water, sleep, cardio and measurements stay in the tracker for now.
+//   - daily macros, water and sleep    → S.nutrition (one item per day, id 'tt-<date>')
+// Cardio and measurements stay in the tracker for now.
 //
 // Exercise names: only a name that IS a library name (the tracker's Program Editor adds exercises
 // from the same 1324-exercise dataset) is linked to the library. Anything else becomes a custom
@@ -119,11 +120,21 @@ export function convertTracker(payload, existingCustom = []) {
     .sort((a, b) => (a.d < b.d ? -1 : 1))
     .map(b => ({ ...b, t: new Date(b.d + 'T08:00:00').getTime() }))
 
+  // Daily macros, water, sleep: one item per day under a fixed id, so importing again adds nothing twice.
+  const nutrition = Object.entries(payload?.daily || {}).map(([d, day]) => {
+    if (!isoDate(d) || !day) return null
+    const p = num(day.protein), c = num(day.carbs), f = num(day.fat)
+    const water = num(day.water), sleep = num(day.sleep)
+    if (!(p || c || f || water || sleep)) return null
+    return { d, item: p || c || f ? { id: 'tt-' + d, name: 'Tracker', p: Math.round(p * 10) / 10, c: Math.round(c * 10) / 10, f: Math.round(f * 10) / 10, t: new Date(d + 'T20:00:00').getTime() } : null,
+      water: water > 0 && water <= 15 ? water : 0, sleep: sleep > 0 && sleep <= 24 ? sleep : 0 }
+  }).filter(Boolean).sort((a, b) => (a.d < b.d ? -1 : 1))
+
   // Custom exercises this import actually uses, that the profile does not have yet.
   const used = new Set([...routines.flatMap(r => r.ex.map(e => e.id)), ...workouts.flatMap(w => w.entries.map(e => e.id))])
   const customEx = fresh.filter(c => used.has(c.id))
 
-  return { routines, workouts, bodyweight, customEx, linked, programName: program?.name || '' }
+  return { routines, workouts, bodyweight, nutrition, customEx, linked, programName: program?.name || '' }
 }
 
 /**
@@ -144,6 +155,18 @@ export function applyTrackerImport(S, conv, { now = new Date().toISOString() } =
   S.exWeights = S.exWeights || {}
   const w = mergeImport(S, { kind: 'workouts', workouts: conv.workouts, customEx: [] })
   const b = mergeImport(S, { kind: 'bodyweight', bodyweight: conv.bodyweight })
+  // Nutrition: the tracker's day totals, where this app has nothing of its own for that field.
+  let days = 0
+  S.nutrition = S.nutrition && typeof S.nutrition === 'object' ? S.nutrition : {}
+  for (const n of conv.nutrition || []) {
+    const day = S.nutrition[n.d] || { items: [] }
+    day.items = Array.isArray(day.items) ? day.items : []
+    let touched = false
+    if (n.item && !day.items.some(i => i.id === n.item.id) && !(day.del || []).includes(n.item.id)) { day.items.push({ ...n.item }); touched = true }
+    if (n.water && !day.water) { day.water = n.water; touched = true }
+    if (n.sleep && !day.sleep) { day.sleep = n.sleep; touched = true }
+    if (touched) { day._ts = Date.now(); S.nutrition[n.d] = day; days++ }
+  }
   S.trackerImport = { at: now, ...(first ? {} : { firstAt: S.trackerImport.firstAt || S.trackerImport.at }) }
-  return { routines, workouts: w.added, workoutsSkipped: w.skipped, weights: b.added, customs: conv.customEx.length }
+  return { routines, workouts: w.added, workoutsSkipped: w.skipped, weights: b.added, days, customs: conv.customEx.length }
 }
