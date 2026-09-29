@@ -36,6 +36,7 @@ function fakeFirebase() {
       return res(200, { documents })
     }
     if ((init.method || 'GET') === 'GET') return cur ? res(200, { fields: cur.fields, updateTime: cur.updateTime }) : res(404, {})
+    if (init.method === 'DELETE') { docs.delete(path); return res(200, {}) }
     if (init.method === 'PATCH') {
       if (beforeWrite) { const f = beforeWrite; beforeWrite = null; f(docs, path) }
       const now = docs.get(path)
@@ -497,5 +498,79 @@ describe('member list when a rule is missing', () => {
     } })
     await post('/api/login/password', { name: 'mertcan.tasyurekk@gmail.com', password: 'a' })
     await expect(firebaseApi('/api/coach/members')).rejects.toMatchObject({ status: 403, message: 'userdata listelenemedi: Missing or insufficient permissions.' })
+  })
+})
+
+describe('backups', () => {
+  const str = v => ({ stringValue: v })
+  const asCoach = () => post('/api/login/password', { name: 'mertcan.tasyurekk@gmail.com', password: 'a' })
+  const seed = (big = false) => {
+    fb.docs.set('userdata/U1', { fields: { displayName: str('Seda'), email: str('uye@x.com'), payload: str(big ? 'x'.repeat(500 * 1024) : '{}') }, updateTime: 'a' })
+    fb.docs.set('userdata/U2', { fields: { displayName: str('Ali'), email: str('iki@x.com'), payload: str(big ? 'y'.repeat(500 * 1024) : '{}') }, updateTime: 'a' })
+    fb.docs.set('ogstate/U1', { fields: { state: str('{"workouts":[{"d":"2026-09-01"}]}'), rev: { integerValue: '3' } }, updateTime: 'b' })
+    fb.docs.set('coachplan/U1', { fields: { plan: str('{"routines":[]}'), rev: { integerValue: '1' } }, updateTime: 'c' })
+    fb.docs.set('coachnotes/U1', { fields: { note: str('FMF') }, updateTime: 'd' })
+    fb.docs.set('sharedData/customFoods', { fields: { items: { arrayValue: { values: [] } } }, updateTime: 'e' })
+    fb.docs.set('backups/backup_2026-09-19', { fields: { note: str('the tracker\'s own') }, updateTime: 'f' })
+  }
+  const day = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
+
+  it('takes everything, once every two days, and it reads back whole', async () => {
+    seed(); await asCoach()
+    const r1 = await post('/api/coach/backup', {})
+    expect(r1).toMatchObject({ skipped: false, id: 'og_' + day(), parts: 0 })
+    const saved = JSON.parse(fb.docs.get('backups/og_' + day()).fields.data.stringValue)
+    expect(Object.keys(saved.collections).sort()).toEqual(['coachnotes', 'coachplan', 'ogstate', 'sharedData', 'userdata'])
+    expect(saved.collections.ogstate.U1.state.stringValue).toContain('2026-09-01')
+    expect(saved.collections.coachnotes.U1.note.stringValue).toBe('FMF')
+    expect(saved.collections.userdata.U2.displayName.stringValue).toBe('Ali')
+    expect((await post('/api/coach/backup', {})).skipped).toBe(true)          // same day: not again
+    expect((await post('/api/coach/backup', { force: true })).skipped).toBe(false)
+    const list = await firebaseApi('/api/coach/backups')
+    expect(list.meta.lastDay).toBe(day())
+    expect(list.backups.map(b => b.id)).toEqual(['og_' + day()])            // the tracker's backup is not listed
+  })
+
+  it('splits a big copy per member, with nothing lost', async () => {
+    seed(true); await asCoach()
+    const r = await post('/api/coach/backup', { force: true })
+    expect(r.parts).toBe(2)
+    const main = fb.docs.get('backups/og_' + day())
+    expect(main.fields.split.booleanValue).toBe(true)
+    const partIds = main.fields.parts.arrayValue.values.map(v => v.stringValue).sort()
+    expect(partIds).toEqual([`og_${day()}__U1`, `og_${day()}__U2`])
+    const p1 = JSON.parse(fb.docs.get('backups/' + partIds[0]).fields.data.stringValue)
+    expect(p1.collections.userdata.U1.payload.stringValue.length).toBe(500 * 1024)
+    expect(p1.collections.coachnotes.U1.note.stringValue).toBe('FMF')
+    expect(JSON.parse(main.fields.data.stringValue).collections.sharedData).toBeTruthy()
+  })
+
+  it('keeps the last 15 copies of this app and never the tracker\'s', async () => {
+    seed(); await asCoach()
+    for (let i = 1; i <= 17; i++) fb.docs.set(`backups/og_2025-01-${String(i).padStart(2, '0')}`, { fields: { kind: str('og') }, updateTime: 'z' })
+    fb.docs.set('backups/og_2025-01-01__U1', { fields: { kind: str('og-part') }, updateTime: 'z' })
+    await post('/api/coach/backup', { force: true })
+    const og = [...fb.docs.keys()].filter(k => /^backups\/og_\d/.test(k) && !k.includes('__'))
+    expect(og).toHaveLength(15)
+    expect(fb.docs.has('backups/og_2025-01-01')).toBe(false)
+    expect(fb.docs.has('backups/og_2025-01-01__U1')).toBe(false)             // its parts go with it
+    expect(fb.docs.has('backups/og_2025-01-03')).toBe(false)
+    expect(fb.docs.has('backups/og_2025-01-04')).toBe(true)
+    expect(fb.docs.has('backups/backup_2026-09-19')).toBe(true)
+  })
+
+  it('is the coach\'s alone', async () => {
+    seed(); await post('/api/login/password', { name: 'uye@x.com', password: 'dogru' })
+    await expect(post('/api/coach/backup', { force: true })).rejects.toMatchObject({ status: 403 })
+    await expect(firebaseApi('/api/coach/backup/data')).rejects.toMatchObject({ status: 403 })
+  })
+})
+
+describe('tracker payload for the coach', () => {
+  it('reads a member\'s payload, never writes', async () => {
+    fb.docs.set('userdata/U1', { fields: { payload: { stringValue: '{"programs":[]}' } }, updateTime: 'a' })
+    await post('/api/login/password', { name: 'mertcan.tasyurekk@gmail.com', password: 'a' })
+    expect(await firebaseApi('/api/coach/tracker-payload?uid=U1')).toEqual({ payload: '{"programs":[]}' })
+    expect(await firebaseApi('/api/coach/tracker-payload?uid=NOPE')).toEqual({ payload: null })
   })
 })

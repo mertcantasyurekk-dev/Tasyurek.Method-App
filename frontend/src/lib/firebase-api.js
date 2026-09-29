@@ -523,6 +523,90 @@ async function trackerExtras(a, uid) {
   return { note: fromFs(f.coachNote) || '', goal: fromFs(f.coachGoal) || '', reports, reviews }
 }
 
+/* ------------------------------------------------------------ backups -------------------------- */
+// Everything, as Firestore keeps it (typed fields), so a restore can put it back exactly:
+// the tracker's userdata, this app's ogstate / coachplan / coachnotes, and the shared food list.
+// Automatic copies go to backups/og_YYYY-MM-DD (the tracker's own are backup_YYYY-MM-DD and are
+// left alone); over 800 KB a copy is split per member (og_DATE__<uid> parts + a main document), as
+// the tracker does. The last BACKUP_KEEP copies are kept. backups/_og_meta remembers the last one.
+const BACKUP_COLLECTIONS = ['userdata', 'ogstate', 'coachplan', 'coachnotes']
+const BACKUP_SPLIT = 800 * 1024
+const BACKUP_KEEP = 15
+const BACKUP_EVERY_DAYS = 2
+const backupUrl = id => `${DOCS()}/backups/${encodeURIComponent(id)}`
+const localIso = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+async function backupData(a) {
+  const out = { app: 'tasyurek-method', version: 1, createdAt: new Date().toISOString(), collections: {} }
+  for (const c of BACKUP_COLLECTIONS) {
+    out.collections[c] = Object.fromEntries((await listDocs(a, c)).map(d => [d.id, d.fields]))
+  }
+  const foods = await jsonFetch(FOODS_URL(), { headers: { Authorization: 'Bearer ' + a.idToken } })
+  out.collections.sharedData = { customFoods: foods.r.ok ? foods.body.fields || {} : {} }
+  return out
+}
+
+async function putDoc(a, url, fields) {
+  const { r, body } = await jsonFetch(url, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + a.idToken }, body: JSON.stringify({ fields })
+  })
+  if (!r.ok) throw err(r.status, 'Yedek yazılamadı: ' + (body?.error?.message || r.status))
+}
+
+async function readBackupMeta(a) {
+  const { r, body } = await jsonFetch(backupUrl('_og_meta'), { headers: { Authorization: 'Bearer ' + a.idToken } })
+  if (!r.ok) return null
+  const f = body.fields || {}
+  return { lastDay: f.lastDay?.stringValue || null, lastId: f.lastId?.stringValue || null, lastAt: f.lastAt?.timestampValue || null, bytes: Number(f.bytes?.integerValue || 0) }
+}
+
+export const daysBetween = (a, b) => Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000)
+
+// Writes today's copy. Returns { id, bytes, parts }.
+async function writeBackup(a) {
+  const data = await backupData(a)
+  const day = localIso()
+  const id = 'og_' + day
+  const text = JSON.stringify(data)
+  const at = { timestampValue: data.createdAt }
+  let parts = []
+  if (text.length <= BACKUP_SPLIT) {
+    await putDoc(a, backupUrl(id), { kind: { stringValue: 'og' }, day: { stringValue: day }, createdAt: at, bytes: { integerValue: String(text.length) }, data: { stringValue: text } })
+  } else {
+    // One part per member (all their documents), the shared food list in the main document.
+    const uids = new Set(BACKUP_COLLECTIONS.flatMap(c => Object.keys(data.collections[c] || {})))
+    for (const uid of uids) {
+      const part = { collections: Object.fromEntries(BACKUP_COLLECTIONS.map(c => [c, data.collections[c]?.[uid] ? { [uid]: data.collections[c][uid] } : {}])) }
+      const partText = JSON.stringify(part)
+      if (partText.length > 1000 * 1024) throw err(413, `Yedek: ${uid} tek başına çok büyük (${Math.round(partText.length / 1024)} KB)`)
+      const pid = `${id}__${uid}`
+      await putDoc(a, backupUrl(pid), { kind: { stringValue: 'og-part' }, day: { stringValue: day }, createdAt: at, data: { stringValue: partText } })
+      parts.push(pid)
+    }
+    const main = JSON.stringify({ ...data, collections: { sharedData: data.collections.sharedData } })
+    await putDoc(a, backupUrl(id), {
+      kind: { stringValue: 'og' }, day: { stringValue: day }, createdAt: at, bytes: { integerValue: String(text.length) }, data: { stringValue: main },
+      split: { booleanValue: true }, parts: { arrayValue: { values: parts.map(p => ({ stringValue: p })) } }
+    })
+  }
+  await putDoc(a, backupUrl('_og_meta'), { lastDay: { stringValue: day }, lastId: { stringValue: id }, lastAt: at, bytes: { integerValue: String(text.length) } })
+  // Keep the last BACKUP_KEEP copies of this app (and their parts); never touch the tracker's.
+  const all = (await listDocs(a, 'backups', ['kind', 'day'])).filter(d => /^og_\d{4}-\d{2}-\d{2}/.test(d.id))
+  const days = [...new Set(all.map(d => d.id.slice(3, 13)))].sort()
+  const drop = new Set(days.slice(0, Math.max(0, days.length - BACKUP_KEEP)))
+  for (const d of all.filter(x => drop.has(x.id.slice(3, 13)))) {
+    await jsonFetch(backupUrl(d.id), { method: 'DELETE', headers: { Authorization: 'Bearer ' + a.idToken } })
+  }
+  return { id, bytes: text.length, parts: parts.length }
+}
+
+async function listBackups(a) {
+  const all = await listDocs(a, 'backups', ['kind', 'day', 'createdAt', 'bytes', 'split'])
+  return all.filter(d => d.fields.kind?.stringValue === 'og')
+    .map(d => ({ id: d.id, day: d.fields.day?.stringValue, createdAt: d.fields.createdAt?.timestampValue || null, bytes: Number(d.fields.bytes?.integerValue || 0), split: !!d.fields.split?.booleanValue }))
+    .sort((x, y) => (x.id < y.id ? 1 : -1))
+}
+
 async function asCoach() {
   const a = await idToken()
   if (!isAdmin(a)) throw err(403, 'coach only')
@@ -619,6 +703,29 @@ export async function firebaseApi(path, init = {}) {
     case 'PUT /api/coach/review': {
       if (!body?.uid) throw err(400, 'uid required')
       return sendReview(await asCoach(), String(body.uid), body)
+    }
+    case 'GET /api/coach/backup/data':
+      return backupData(await asCoach())
+    case 'GET /api/coach/backups': {
+      const a = await asCoach()
+      return { meta: await readBackupMeta(a), backups: await listBackups(a) }
+    }
+    case 'POST /api/coach/backup': {
+      // { force } — without it, only when the last copy is BACKUP_EVERY_DAYS or more calendar days old.
+      const a = await asCoach()
+      const meta = await readBackupMeta(a)
+      if (!body?.force && meta?.lastDay && daysBetween(meta.lastDay, localIso()) < BACKUP_EVERY_DAYS) return { skipped: true, meta }
+      return { skipped: false, ...(await writeBackup(a)) }
+    }
+    case 'GET /api/coach/tracker-payload': {
+      // A member's tracker payload, for transferring their program. Read-only (field mask).
+      const uid = new URLSearchParams(path.split('?')[1] || '').get('uid')
+      if (!uid) throw err(400, 'uid required')
+      const a = await asCoach()
+      const { r, body: d } = await jsonFetch(`${DOCS()}/userdata/${encodeURIComponent(uid)}?mask.fieldPaths=payload`, { headers: { Authorization: 'Bearer ' + a.idToken } })
+      if (r.status === 404) return { payload: null }
+      if (!r.ok) throw err(r.status, d?.error?.message || 'read failed')
+      return { payload: d?.fields?.payload?.stringValue || null }
     }
     case 'GET /api/coach/tracker-extra': {
       const uid = new URLSearchParams(path.split('?')[1] || '').get('uid')

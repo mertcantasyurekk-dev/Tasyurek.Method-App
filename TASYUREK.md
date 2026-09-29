@@ -71,6 +71,26 @@ Koç panelinde üye detayı (`views/CoachWeekly.jsx`, biçimler `lib/coach360.js
 - **Tracker'dan aktar** (bir kez, taraf boşken): eski `coachNote`, `coachGoal`, `coachReports`,
   `weeklyRevisions` (orijinal tarihleriyle) gelir; `userdata`'ya yazılmaz.
 
+## Tracker programlarının aktarımı
+
+Koç panelinde **Tracker programlarını aktar** (hepsi birden) ya da üye detayında **Tracker programını ata**
+(`components/TrackerTransfer.jsx`, `trackerPlan` in `lib/tracker-import.js`): üyenin tracker'daki aktif programı
+koç programı olarak `coachplan/{uid}`'e yazılır. Rutin kimlikleri sabittir (`tt-<programId>-<dayId>`), tekrar
+aktarmak aynı rutinleri günceller. Günler sırayla haftaya yerleşir (3 gün → Pzt/Çar/Cum, 5 gün → Pzt–Cum…),
+sonra "Programı güncelle" ile değiştirilir. Kullanıcı hareketleri üyenin kendi (geçmişten gelen) hareketleriyle
+adından eşleşir. Üyenin burada hedefi yoksa tracker'daki makro hedefleri de gelir. `userdata`'ya yazılmaz.
+
+## Yedekleme
+
+Koç panelinde **Yedekler** (`components/Backup.jsx`, sunucu tarafı `firebase-api.js` "backups"):
+- **Otomatik**: koç uygulamayı açınca, son yedek 2+ takvim günü eskiyse `backups/og_YYYY-AA-GG`'ye yazılır.
+  İçerik: `userdata` (tracker), `ogstate`, `coachplan`, `coachnotes`, `sharedData/customFoods` — Firestore'daki
+  tipli alanlarıyla (birebir geri yüklenebilir). 800 KB üstü üye başına bölünür (`og_TARİH__<uid>` + ana belge).
+  Son 15 yedek tutulur; tracker'ın `backup_…` yedeklerine dokunulmaz. `backups/_og_meta` son yedeği tutar.
+  Yeni Firestore kuralı gerekmez (`backups/{id}` zaten koça açık).
+- **Manuel**: "Şimdi yedekle" ve "Tam yedeği bilgisayarıma indir" (JSON).
+- Geri yükleme henüz otomatik değil: yedek dosyasından/belgesinden elle yapılır.
+
 ## Beslenme (günlük takip)
 
 Ana sayfadaki kart (`components/NutritionCard.jsx`, stiller `components/nutrition.css`): kcal halkası (makro

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect } from 'vitest'
-import { parseReps, readPayload, convertTracker, applyTrackerImport } from './tracker-import.js'
+import { parseReps, readPayload, convertTracker, applyTrackerImport, trackerPlan, defaultWeek } from './tracker-import.js'
 import { DEF } from '../store/useStore.js'
 import { EXIDX } from './exercises.js'
 
@@ -181,5 +181,24 @@ describe('nutrition from the tracker', () => {
     const again = applyTrackerImport(S, convertTracker(payload), { now: 'T2' })
     expect(again.days).toBe(0)
     expect(S.nutrition['2026-09-01'].p).toBe(150)
+  })
+})
+
+describe('the coach\'s transfer of the tracker program', () => {
+  it('stable routine ids, a starting week, and the member\'s own custom exercises reused', () => {
+    const mine = { id: 'hist1', n: 'incline db press (30°)', custom: true }
+    const plan = trackerPlan(PAYLOAD, [mine, { id: 'other', n: 'x', custom: true }])
+    expect(plan.programName).toBe('Başlangıç - Tam Vücut')
+    expect(plan.routines.map(r => r.id)).toEqual(['tt-p2-d1', 'tt-p2-d2'])
+    expect(trackerPlan(PAYLOAD, [mine]).routines.map(r => r.id)).toEqual(['tt-p2-d1', 'tt-p2-d2'])   // again: same ids
+    expect(plan.week).toEqual({ 1: ['tt-p2-d1'], 4: ['tt-p2-d2'] })
+    expect(plan.routines[0].ex[1].id).toBe('hist1')
+    expect(plan.customEx.map(c => c.id)).toEqual(['hist1'])
+    expect(trackerPlan({}, [])).toBeNull()
+  })
+  it('spreads 1–7 days over the week', () => {
+    expect(Object.keys(defaultWeek(['a', 'b', 'c'])).sort()).toEqual(['1', '3', '5'])
+    expect(Object.keys(defaultWeek(['a', 'b', 'c', 'd', 'e'])).sort()).toEqual(['1', '2', '3', '4', '5'])
+    expect(defaultWeek(Array.from({ length: 9 }, (_, i) => 'r' + i))[0]).toEqual(['r6'])
   })
 })

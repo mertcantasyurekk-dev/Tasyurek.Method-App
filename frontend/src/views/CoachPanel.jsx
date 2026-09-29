@@ -17,6 +17,8 @@ import { Section, Row, Button, Check, SelectRow } from '../components/ui.jsx'
 import { tappable } from '../lib/use-sheet-keyboard.js'
 import { TargetsForm } from '../components/NutritionCard.jsx'
 import CoachWeekly from './CoachWeekly.jsx'
+import { loadTrackerPlan, oneMemberTransferSheet, everyoneTransferSheet } from '../components/TrackerTransfer.jsx'
+import { backupSheet } from '../components/Backup.jsx'
 import { totalsOf, kcalOf } from '../lib/nutrition.js'
 
 const toast = m => useUI.getState().toast(m)
@@ -53,6 +55,10 @@ export function CoachPanel() {
       <button className="iconbtn" onClick={load} aria-label="Yenile"><Icon name="reset" /></button>
     </div>
     {error && <div className="card small" style={{ color: 'var(--red)' }}>{error}</div>}
+    {members && <div className="row" style={{ gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+      <Button size="sm" variant="tinted" icon="download" onClick={() => everyoneTransferSheet({ members, onDone: load })}>Tracker programlarını aktar</Button>
+      <Button size="sm" icon="cloud" onClick={() => backupSheet({ members })}>Yedekler</Button>
+    </div>}
     {warnings.map((w, i) => <div key={i} className="card small" style={{ color: 'var(--orange)' }}>{w} — bu bilgiler listede eksik görünür. Firestore kurallarını kontrol et.</div>)}
     {members && <div className="list">
       {members.map(m => <div key={m.uid} className="item" {...tappable(() => nav('/panel/' + m.uid))}>
@@ -96,10 +102,14 @@ export function CoachMember() {
   const [m, setM] = useState(null)      // { state, plan, planRev }
   const [info, setInfo] = useState(null) // the list row: name, email
   const [error, setError] = useState(null)
+  const [tp, setTp] = useState(null)       // the member's active tracker program, as a plan
   const load = () => {
     setError(null)
     Promise.all([api('/api/coach/member?uid=' + encodeURIComponent(uid)), api('/api/coach/members')])
-      .then(([one, all]) => { setM(one); setInfo(all.members.find(x => x.uid === uid) || { name: uid }) })
+      .then(([one, all]) => {
+        setM(one); setInfo(all.members.find(x => x.uid === uid) || { name: uid })
+        loadTrackerPlan(uid, one.state?.customEx).then(setTp).catch(() => setTp(null))
+      })
       .catch(e => setError(e.message || 'Yüklenemedi'))
   }
   useEffect(load, [uid])
@@ -158,6 +168,8 @@ export function CoachMember() {
           {m.plan ? 'Programı güncelle' : 'Program ata'}</Button>
         <div style={{ height: 8 }} />
         <Button icon="upload" onClick={copyToMine}>Programını Plan sekmeme kopyala</Button>
+        {tp && <><div style={{ height: 8 }} />
+          <Button icon="download" onClick={() => oneMemberTransferSheet({ uid, name: info.name, tp, m, onDone: load })}>Tracker programını ata („{tp.programName}")</Button></>}
       </div>
     </Section>
 

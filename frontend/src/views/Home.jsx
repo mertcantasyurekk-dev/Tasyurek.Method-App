@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
 import { effectiveRoutines, effectiveRoutineIds, nextTrainingDay, streakWeeks, lastBW, setsDoneActive } from '../lib/history.js'
@@ -8,6 +8,7 @@ import { useCoached } from '../lib/coached.js'   // Taşyürek
 import { FIREBASE } from '../lib/firebase-api.js'
 import NutritionCard from '../components/NutritionCard.jsx'
 import CoachMessageCard from '../components/CoachMessages.jsx'
+import { maybeAutoBackup } from '../components/Backup.jsx'
 import { bwSheet, goalSheet, dayOverrideSheet, calendarSheet, startFlow, starterPlanSheet, bwDeltaColor, weighInsSheet } from '../sheets.jsx'
 import LineChart from '../components/LineChart.jsx'
 import Icon from '../components/Icon.jsx'
@@ -21,6 +22,8 @@ export default function Home() {
   const nav = useNavigate()
   const S = useStore(s => s.S)
   const user = useStore(s => s.user)
+  // Taşyürek: the coach opening the app is when the every-two-days backup gets its chance.
+  useEffect(() => { if (FIREBASE && user?.admin) maybeAutoBackup() }, [user?.admin])
   const [weekOffset, setWeekOffset] = useState(0)
 
   const today = new Date()

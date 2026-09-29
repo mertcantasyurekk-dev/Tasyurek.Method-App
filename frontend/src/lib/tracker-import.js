@@ -53,7 +53,7 @@ export function readPayload(raw) {
  * Work out everything the import would add, without touching state.
  * `existingCustom` is the profile's S.customEx: a name already there is reused, not duplicated.
  */
-export function convertTracker(payload, existingCustom = []) {
+export function convertTracker(payload, existingCustom = [], { stableIds = false } = {}) {
   const custom = new Map()   // clean name -> custom exercise (existing or new)
   existingCustom.forEach(c => { if (c && c.n) custom.set(clean(c.n), c) })
   const fresh = []
@@ -74,7 +74,8 @@ export function convertTracker(payload, existingCustom = []) {
   // Program → routines. The active one only: that is what the member trains now.
   const programs = Array.isArray(payload?.programs) ? payload.programs : []
   const program = programs.find(p => p && p.id === payload.activeProgramId) || programs[0] || null
-  const routines = (program?.days || []).filter(d => d && Array.isArray(d.exercises)).map(day => {
+  const slug = v => String(v ?? '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40)
+  const routines = (program?.days || []).filter(d => d && Array.isArray(d.exercises)).map((day, di) => {
     const ex = day.exercises.map(e => {
       const id = exId(e?.name)
       if (!id) return null
@@ -90,7 +91,10 @@ export function convertTracker(payload, existingCustom = []) {
     }).filter(Boolean)
     const label = String(day.label || '').trim() || 'Antrenman'
     const focus = String(day.focus || '').trim()
-    return { id: uid(), name: focus ? `${label} — ${focus}` : label, emoji: 'barbell', ex }
+    // The coach's transfer uses ids that stay the same each time, so doing it again updates the same
+    // routines (and the member's history stays attached to them).
+    const id = stableIds ? `tt-${slug(program.id) || 'p'}-${slug(day.id) || di}` : uid()
+    return { id, name: focus ? `${label} — ${focus}` : label, emoji: 'barbell', ex }
   }).filter(r => r.ex.length)
 
   // Workouts, in the shape mergeImport takes.
@@ -170,4 +174,26 @@ export function applyTrackerImport(S, conv, { now = new Date().toISOString() } =
   }
   S.trackerImport = { at: now, ...(first ? {} : { firstAt: S.trackerImport.firstAt || S.trackerImport.at }) }
   return { routines, workouts: w.added, workoutsSkipped: w.skipped, weights: b.added, days, customs: conv.customEx.length }
+}
+
+// Days of the week for n routines in order, when the tracker had no weekday for them (openGym keys:
+// 0 Sunday … 6 Saturday). A starting point; the coach moves days in the assignment sheet.
+export function defaultWeek(ids) {
+  const days = { 1: [1], 2: [1, 4], 3: [1, 3, 5], 4: [1, 2, 4, 5], 5: [1, 2, 3, 4, 5], 6: [1, 2, 3, 4, 5, 6], 7: [1, 2, 3, 4, 5, 6, 0] }[Math.min(ids.length, 7)] || []
+  const week = {}
+  days.forEach((d, i) => { week[d] = [ids[i]] })
+  return week
+}
+
+/**
+ * The coach's side: the member's active tracker program as a plan for coachplan/{uid}.
+ * `memberCustom` is the member's own customEx, so a custom exercise they already have (from their
+ * history import) is reused by name and routine and history point at the same exercise.
+ */
+export function trackerPlan(payload, memberCustom = []) {
+  const conv = convertTracker(payload, memberCustom, { stableIds: true })
+  if (!conv.routines.length) return null
+  const used = new Set(conv.routines.flatMap(r => r.ex.map(e => e.id)))
+  const customEx = [...conv.customEx.filter(c => used.has(c.id)), ...memberCustom.filter(c => c && used.has(c.id) && !conv.customEx.some(x => x.id === c.id))]
+  return { routines: conv.routines, week: defaultWeek(conv.routines.map(r => r.id)), customEx, programName: conv.programName }
 }
