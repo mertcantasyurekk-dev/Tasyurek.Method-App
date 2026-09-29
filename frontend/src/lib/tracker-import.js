@@ -134,7 +134,8 @@ export function applyTrackerImport(S, conv, { now = new Date().toISOString() } =
   S.customEx = [...(S.customEx || []), ...conv.customEx]
   const first = !S.trackerImport
   let routines = 0
-  if (first && conv.routines.length) {
+  // A member the coach has given a program to trains that program: their tracker routines stay behind.
+  if (first && conv.routines.length && !S.coachPlanAt) {
     S.routines = [...(S.routines || []), ...conv.routines]
     routines = conv.routines.length
   }

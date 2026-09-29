@@ -5,6 +5,7 @@ import { effectiveRoutines, effectiveRoutineIds, nextTrainingDay, streakWeeks, l
 import { fmtNum, fmtDate, todayISO, isoOf, weekKey, weekStartOf, weekDayOffset, DAYS, DAYN } from '../lib/format.js'
 import { t, dateLocale } from '../lib/i18n.js'
 import { useCoached } from '../lib/coached.js'   // Taşyürek
+import { FIREBASE } from '../lib/firebase-api.js'
 import { bwSheet, goalSheet, dayOverrideSheet, calendarSheet, startFlow, starterPlanSheet, bwDeltaColor, weighInsSheet } from '../sheets.jsx'
 import LineChart from '../components/LineChart.jsx'
 import Icon from '../components/Icon.jsx'
@@ -114,6 +115,17 @@ export default function Home() {
         </Button>
       </div>}
     </div>
+
+    {/* Taşyürek: the coach's way into the panel, at the top of Home. */}
+    {FIREBASE && user?.admin && <div className="card tappable" style={{ cursor: 'pointer' }} {...tappable(() => nav('/panel'))}>
+      <div className="row between">
+        <div className="row" style={{ gap: 9 }}>
+          <span className="lrow-i" style={{ background: 'var(--acc)', color: 'var(--on-acc)' }}><Icon name="wrench" /></span>
+          <div><div className="lbl2">Üyeler ve programlar</div><div className="ttl">Koç paneli</div></div>
+        </div>
+        <Icon name="chevronRight" className="chev" />
+      </div>
+    </div>}
 
     {/* Jump to the gym check-in cards (QR membership codes). Shown here as a quick tap on
         arrival at the gym; folds away per user via the "Gym check-in" switch in Settings. */}

@@ -306,6 +306,7 @@ export default function Settings() {
           onClick={() => window.open(REPO, '_blank', 'noopener')} />
       </> : user && FIREBASE ? <>
         {/* Taşyürek: accounts live in Firebase Auth and are made by the coach — sign out is all there is. */}
+        {user.admin && <Row icon="wrench" iconTint="var(--acc)" title="Koç paneli" subtitle="Üyeler ve programları" accessory="chevron" onClick={() => nav('/panel')} />}
         <Row icon="signOut" iconTint="var(--red)" title={t('Sign out')} danger onClick={signOutHere} />
       </> : user ? <>
         {user.admin && <Row icon="wrench" iconTint="var(--indigo)" title={t('Admin dashboard')} accessory="chevron" onClick={() => nav('/admin')} />}

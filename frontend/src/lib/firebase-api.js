@@ -75,6 +75,7 @@ async function idToken() {
   return refreshing
 }
 
+const isAdmin = a => (a.email || '').toLowerCase() === CFG.adminEmail
 const userOf = a => ({
   id: a.uid,
   name: a.displayName || (a.email || '').split('@')[0],
@@ -102,6 +103,51 @@ async function readDoc(a) {
   return { exists: true, state, rev, updateTime: body.updateTime }
 }
 
+/* ------------------------------------------------------------ the coach's plan ---------------- */
+// coachplan/{uid} = { plan: <JSON string: { routines, week, customEx, updatedAt }>, rev }. Only the
+// coach writes it (Firestore rules); a member's app lays it over their own copy on every read, so
+// the program they see is always the coach's and nothing they do can change it.
+//
+// openGym tells "something changed" by one number, the document's revision. A member's app must
+// also notice when the coach changes the plan, so the revision it sees is the two combined:
+// planRev * REV_SPAN + ogRev. PUT compares and answers in the same combined numbers.
+const REV_SPAN = 1000000
+const planUrl = uid => `${DOCS()}/coachplan/${encodeURIComponent(uid)}`
+
+async function readPlan(a, uid = a.uid) {
+  const { r, body } = await jsonFetch(planUrl(uid), { headers: { Authorization: 'Bearer ' + a.idToken } })
+  if (r.status === 404) return { exists: false, plan: null, rev: 0, updateTime: null }
+  if (!r.ok) throw err(r.status, body?.error?.message || 'plan read failed')
+  const f = body.fields || {}
+  let plan = null
+  try { plan = f.plan?.stringValue ? JSON.parse(f.plan.stringValue) : null } catch { plan = null }
+  return { exists: true, plan, rev: Number(f.rev?.integerValue || 0), updateTime: body.updateTime }
+}
+
+// The member's copy with the coach's program in place of their own routines and week.
+export function applyPlan(state, plan) {
+  if (!plan) return state
+  const S = state || {}
+  const planEx = Array.isArray(plan.customEx) ? plan.customEx : []
+  const ids = new Set(planEx.map(c => c.id))
+  S.routines = Array.isArray(plan.routines) ? plan.routines : []
+  S.week = plan.week && typeof plan.week === 'object' ? plan.week : {}
+  S.customEx = [...(Array.isArray(S.customEx) ? S.customEx.filter(c => !ids.has(c?.id)) : []), ...planEx]
+  S.coachPlanAt = plan.updatedAt || null
+  return S
+}
+
+// What a member's app is served: their document with the plan over it, and the combined revision.
+async function readCombined(a) {
+  const og = await readDoc(a)
+  if (isAdmin(a)) return { og, planRev: 0, rev: og.rev, state: og.state }
+  const p = await readPlan(a)
+  const rev = p.rev * REV_SPAN + og.rev
+  const state = p.plan ? applyPlan(og.state ? og.state : { lang: 'tr' }, p.plan) : og.state
+  if (state) state._rev = rev
+  return { og, planRev: p.rev, rev, state }
+}
+
 const record = x => !!x && typeof x === 'object' && !Array.isArray(x)
 const records = v => (Array.isArray(v) ? v.filter(record) : [])
 
@@ -114,9 +160,10 @@ async function putData(a, body) {
   if (!list(state.workouts) || !list(state.routines)) throw err(400, 'invalid state')
   for (const k of ['workouts', 'routines']) if (Array.isArray(state[k])) state[k] = records(state[k])
 
-  const cur = await readDoc(a)
-  if (body.baseRev != null && body.baseRev !== cur.rev) {
-    throw err(409, 'conflict', { rev: cur.rev, state: cur.state })
+  const both = await readCombined(a)
+  const cur = both.og
+  if (body.baseRev != null && body.baseRev !== both.rev) {
+    throw err(409, 'conflict', { rev: both.rev, state: both.state })
   }
   delete state.active   // in-progress workouts stay device-local
   const storedReset = Number(cur.state?.resetAt) || 0
@@ -149,12 +196,12 @@ async function putData(a, body) {
   if (!r.ok) {
     // Lost the race between our read and our write: report it the way the server would.
     if (r.status === 400 && /FAILED_PRECONDITION/.test(res?.error?.status || '') || r.status === 409) {
-      const now = await readDoc(a)
+      const now = await readCombined(a)
       throw err(409, 'conflict', { rev: now.rev, state: now.state })
     }
     throw err(r.status, res?.error?.message || 'write failed')
   }
-  return { ok: true, ts: state._ts || null, rev: nextRev }
+  return { ok: true, ts: state._ts || null, rev: both.planRev * REV_SPAN + nextRev }
 }
 
 // The name the tracker greets them with lives in userdata/{uid}.displayName. Read that one field
@@ -167,6 +214,114 @@ async function withName(a) {
     const n = r.ok && d?.fields?.displayName?.stringValue
     if (n) { a = { ...a, displayName: n }; writeAuth(a) }
   } catch { /* the e-mail prefix will do */ }
+  return a
+}
+
+/* ----------------------------------------------------------------- coach routes --------------- */
+// The coach's side. Firestore's rules are the real gate (only the coach may list members or write
+// a plan); the checks here just answer early and clearly.
+
+async function listDocs(a, collection, maskFields) {
+  const out = []
+  let token = ''
+  const mask = (maskFields || []).map(f => '&mask.fieldPaths=' + encodeURIComponent(f)).join('')
+  for (let page = 0; page < 20; page++) {
+    const url = `${DOCS()}/${collection}?pageSize=300${mask}${token ? '&pageToken=' + encodeURIComponent(token) : ''}`
+    const { r, body } = await jsonFetch(url, { headers: { Authorization: 'Bearer ' + a.idToken } })
+    if (!r.ok) throw err(r.status, body?.error?.message || 'list failed')
+    for (const d of body.documents || []) out.push({ id: decodeURIComponent(d.name.split('/').pop()), fields: d.fields || {}, updateTime: d.updateTime })
+    if (!body.nextPageToken) break
+    token = body.nextPageToken
+  }
+  return out
+}
+
+const parseState = f => { try { return f.state?.stringValue ? JSON.parse(f.state.stringValue) : null } catch { return null } }
+
+// One line per member for the panel's list.
+function summaryOf(state) {
+  const ws = Array.isArray(state?.workouts) ? state.workouts : []
+  const bw = Array.isArray(state?.bodyweight) ? state.bodyweight : []
+  const last = ws.reduce((m, w) => (w?.d && (!m || w.d > m) ? w.d : m), null)
+  const since = new Date(); since.setDate(since.getDate() - 7)
+  const iso = since.toISOString().slice(0, 10)
+  const lastBw = bw.reduce((m, b) => (b?.d && (!m || b.d > m.d) ? b : m), null)
+  return { lastWorkout: last, workouts7: ws.filter(w => w?.d >= iso).length, workouts: ws.length, lastWeight: lastBw ? lastBw.w : null }
+}
+
+async function coachMembers(a) {
+  const [users, states, plans] = await Promise.all([
+    listDocs(a, 'userdata', ['displayName', 'email']),
+    listDocs(a, CFG.collection),
+    listDocs(a, 'coachplan', ['rev'])
+  ])
+  const og = new Map(states.map(d => [d.id, d]))
+  const pl = new Map(plans.map(d => [d.id, d]))
+  return users
+    .filter(u => (u.fields.email?.stringValue || '').toLowerCase() !== CFG.adminEmail)
+    .map(u => {
+      const st = og.get(u.id)
+      const email = u.fields.email?.stringValue || ''
+      return {
+        uid: u.id, email,
+        name: u.fields.displayName?.stringValue || email.split('@')[0] || u.id,
+        joined: !!st,                                   // has opened the new app
+        ...summaryOf(st ? parseState(st.fields) : null),
+        planAt: pl.get(u.id)?.updateTime || null
+      }
+    })
+    .sort((x, y) => x.name.localeCompare(y.name, 'tr'))
+}
+
+async function coachMember(a, uid) {
+  const { r, body } = await jsonFetch(docUrl(uid), { headers: { Authorization: 'Bearer ' + a.idToken } })
+  if (!r.ok && r.status !== 404) throw err(r.status, body?.error?.message || 'read failed')
+  const state = r.ok ? parseState(body.fields || {}) : null
+  const p = await readPlan(a, uid)
+  return { state, plan: p.plan, planRev: p.rev }
+}
+
+const cleanPlan = plan => {
+  if (!plan || typeof plan !== 'object') throw err(400, 'plan required')
+  const routines = records(plan.routines)
+  if (!routines.length) throw err(400, 'a plan needs at least one routine')
+  const ids = new Set(routines.map(r => r.id))
+  const week = {}
+  for (const [d, v] of Object.entries(plan.week || {})) {
+    if (!/^[0-6]$/.test(d)) continue
+    const list = [].concat(v || []).filter(id => ids.has(id))
+    if (list.length) week[d] = list
+  }
+  return { routines, week, customEx: records(plan.customEx), updatedAt: new Date().toISOString() }
+}
+
+async function coachPutPlan(a, body) {
+  const uid = String(body?.uid || '')
+  if (!uid) throw err(400, 'uid required')
+  const plan = cleanPlan(body.plan)
+  const cur = await readPlan(a, uid)
+  const pre = cur.exists ? 'currentDocument.updateTime=' + encodeURIComponent(cur.updateTime) : 'currentDocument.exists=false'
+  const text = JSON.stringify(plan)
+  if (text.length > MAX_STATE_BYTES) throw err(413, 'plan too large')
+  const mask = ['plan', 'rev', 'updatedAt', 'by'].map(f => 'updateMask.fieldPaths=' + f).join('&')
+  const { r, body: res } = await jsonFetch(`${planUrl(uid)}?${mask}&${pre}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + a.idToken },
+    body: JSON.stringify({ fields: {
+      plan: { stringValue: text }, rev: { integerValue: String(cur.rev + 1) },
+      updatedAt: { timestampValue: plan.updatedAt }, by: { stringValue: a.email || '' }
+    } })
+  })
+  if (!r.ok) {
+    if (r.status === 400 && /FAILED_PRECONDITION/.test(res?.error?.status || '')) throw err(409, 'the plan changed meanwhile — open it again')
+    throw err(r.status, res?.error?.message || 'plan write failed')
+  }
+  return { ok: true, rev: cur.rev + 1, plan }
+}
+
+async function asCoach() {
+  const a = await idToken()
+  if (!isAdmin(a)) throw err(403, 'coach only')
   return a
 }
 
@@ -216,12 +371,12 @@ export async function firebaseApi(path, init = {}) {
     }
     case 'GET /api/data': {
       const a = await idToken()
-      const d = await readDoc(a)
+      const d = await readCombined(a)
       return { state: d.state, rev: d.rev }
     }
     case 'GET /api/data/rev': {
       const a = await idToken()
-      return { rev: (await readDoc(a)).rev }
+      return { rev: (await readCombined(a)).rev }
     }
     case 'PUT /api/data': {
       const a = await idToken()
@@ -237,6 +392,15 @@ export async function firebaseApi(path, init = {}) {
       if (!r.ok) throw err(r.status, d?.error?.message || 'read failed')
       return { payload: d?.fields?.payload?.stringValue || null }
     }
+    case 'GET /api/coach/members':
+      return { members: await coachMembers(await asCoach()) }
+    case 'GET /api/coach/member': {
+      const uid = new URLSearchParams(path.split('?')[1] || '').get('uid')
+      if (!uid) throw err(400, 'uid required')
+      return coachMember(await asCoach(), uid)
+    }
+    case 'PUT /api/coach/plan':
+      return coachPutPlan(await asCoach(), body)
     case 'POST /api/activity':
       return { ok: true }   // the "who is training now" heartbeat has nobody to tell here
     default:

@@ -145,3 +145,16 @@ describe('applyTrackerImport', () => {
     expect(S.trackerImport).toEqual({ at: 'T3', firstAt: 'T1' })
   })
 })
+
+describe('with a coach plan', () => {
+  it('brings history and weights, not the tracker routines', () => {
+    const S = clone(DEF)
+    S.coachPlanAt = '2026-09-28T10:00:00Z'
+    S.routines = [{ id: 'cA', name: 'Koç A', ex: [] }]
+    const r = applyTrackerImport(S, convertTracker(PAYLOAD, S.customEx), { now: 'T1' })
+    expect(r.routines).toBe(0)
+    expect(S.routines.map(x => x.id)).toEqual(['cA'])
+    expect(r.workouts).toBe(3)
+    expect(r.weights).toBe(2)
+  })
+})

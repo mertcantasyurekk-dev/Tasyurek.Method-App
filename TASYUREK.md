@@ -33,6 +33,20 @@ Bu bağlantı ve orijinal telif satırı kaldırılmamalıdır.
 - Başka günün rutinini seçmek (hasta olunca vb.) serbest: sadece koçun rutinleri arasında seçim.
 Admin (koç) tam uygulamayı kullanır. AI Koç Firebase derlemesinde zaten kapalıdır (`/api/config` koç bilgisi göndermez).
 
+## Koç paneli ve program atama
+
+Admin hesabında Ana sayfa ve Ayarlar'da **Koç paneli** (`views/CoachPanel.jsx`, `/panel`).
+- Üye listesi: son antrenman, son 7 gün, programı olup olmadığı. Üye detayı: özet, atanan program, son antrenmanlar.
+- Rutinler koçun kendi Plan sekmesinde openGym editörüyle hazırlanır. **Program ata**, seçilen rutinleri ve haftalık
+  takvimi `coachplan/{uid}` belgesine yazar (`plan`: JSON metni, `rev`, `updatedAt`, `by`). Rutin kimlikleri korunur,
+  böylece üyenin geçmişi aynı rutinlere bağlı kalır. "Seda · " gibi önekler üyeye giderken silinir.
+- **Programını Plan sekmeme kopyala**: üyenin mevcut programını (atanmış plan ya da tracker'dan gelen rutinleri)
+  aynı kimliklerle koçun Plan sekmesine alır; düzenleyip tekrar atanır.
+- Üyenin uygulaması her okumada planı kendi kopyasının üzerine koyar (`applyPlan`): rutinler, hafta ve plandaki
+  kullanıcı hareketleri koçunkidir. Revizyon iki belgenin birleşimidir (`planRev * 1000000 + ogRev`), böylece açık
+  duran uygulama koçun değişikliğini fark eder.
+- Koç, üyenin `ogstate` belgesine **hiç yazmaz**; sadece okur.
+
 ## Eski Tracker'dan aktarma
 
 Ayarlar → Veriler → **Eski Tracker'dan aktar**. Her üye kendi hesabında yapar.
@@ -58,6 +72,15 @@ biri 409 alır ve openGym'in kendi birleştirme mantığı devreye girer.
       allow read, write: if request.auth != null && request.auth.uid == uid;
       allow read: if request.auth != null &&
         request.auth.token.email == 'mertcan.tasyurekk@gmail.com';
+    }
+```
+
+Koç planı için ayrıca:
+
+```
+    match /coachplan/{uid} {
+      allow get: if request.auth != null && (request.auth.uid == uid || isCoach());
+      allow list, create, update, delete: if isCoach();
     }
 ```
 

@@ -30,6 +30,8 @@ import Home from './views/Home.jsx'
 import CheckIn from './views/CheckIn.jsx'
 import Plan from './views/Plan.jsx'
 import CoachedPlan from './views/CoachedPlan.jsx'   // Taşyürek
+import { CoachPanel, CoachMember } from './views/CoachPanel.jsx'
+import { FIREBASE } from './lib/firebase-api.js'
 import { useCoached } from './lib/coached.js'
 import RoutineEdit from './views/RoutineEdit.jsx'
 import Workout from './views/Workout.jsx'
@@ -183,6 +185,8 @@ function Shell() {
                   catch-all redirect below. */}
               {S.checkIn !== false && <Route path="/checkin" element={<CheckIn />} />}
               <Route path="/plan" element={coached ? <CoachedPlan /> : <Plan />} />
+              {FIREBASE && user?.admin && <Route path="/panel" element={<CoachPanel />} />}
+              {FIREBASE && user?.admin && <Route path="/panel/:uid" element={<CoachMember />} />}
               <Route path="/plan/r/:id" element={coached ? <Navigate to="/plan" replace /> : <RoutineEdit />} />
               <Route path="/workout" element={<Workout />} />
               <Route path="/stats" element={<Stats />} />

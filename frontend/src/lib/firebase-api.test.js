@@ -5,7 +5,7 @@ import { firebaseApi, _setTestHooks } from './firebase-api.js'
 function fakeFirebase() {
   const docs = new Map()          // path -> { fields, updateTime }
   let clock = 0
-  const users = { 'uye@x.com': { pw: 'dogru', uid: 'U1' }, 'mertcan.tasyurekk@gmail.com': { pw: 'a', uid: 'ADM' } }
+  const users = { 'uye@x.com': { pw: 'dogru', uid: 'U1' }, 'iki@x.com': { pw: 'b', uid: 'U2' }, 'mertcan.tasyurekk@gmail.com': { pw: 'a', uid: 'ADM' } }
   const calls = []
   let beforeWrite = null           // lets a test slip in another device's write
   const res = (status, body) => ({ ok: status < 300, status, json: async () => body })
@@ -22,8 +22,13 @@ function fakeFirebase() {
       if (!rt.startsWith('ref-')) return res(400, { error: { message: 'INVALID_REFRESH_TOKEN' } })
       return res(200, { id_token: 'tok2', refresh_token: rt, expires_in: '3600' })
     }
-    const path = u.pathname.split('/documents/')[1]
+    const path = decodeURIComponent(u.pathname.split('/documents/')[1])
     const cur = docs.get(path)
+    if ((init.method || 'GET') === 'GET' && !path.includes('/')) {
+      const documents = [...docs.entries()].filter(([k]) => k.startsWith(path + '/'))
+        .map(([k, d]) => ({ name: 'projects/p/databases/default/documents/' + k, fields: d.fields, updateTime: d.updateTime }))
+      return res(200, { documents })
+    }
     if ((init.method || 'GET') === 'GET') return cur ? res(200, { fields: cur.fields, updateTime: cur.updateTime }) : res(404, {})
     if (init.method === 'PATCH') {
       if (beforeWrite) { const f = beforeWrite; beforeWrite = null; f(docs, path) }
@@ -195,5 +200,104 @@ describe('profile defaults', () => {
     await put({ state: { workouts: [], accent: 'sky', lang: 'en', brandAccent: 1 }, baseRev: 1 })
     d = (await firebaseApi('/api/data')).state
     expect(d).toMatchObject({ lang: 'en', accent: 'sky' })   // a later choice is kept
+  })
+})
+
+
+describe('coach plan', () => {
+  const asCoach = () => post('/api/login/password', { name: 'mertcan.tasyurekk@gmail.com', password: 'a' })
+  const asMember = () => post('/api/login/password', { name: 'uye@x.com', password: 'dogru' })
+  const PLAN = {
+    routines: [{ id: 'cA', name: 'A', ex: [{ id: '0025', sets: 3, reps: 10 }] }, { id: 'cB', name: 'B', ex: [] }],
+    week: { 1: ['cA'], 3: ['cB', 'nope'], 9: ['cA'], 5: [] },
+    customEx: [{ id: 'cx1', n: 'Koç hareketi', custom: true }]
+  }
+  const putPlan = (uid, plan) => firebaseApi('/api/coach/plan', { method: 'PUT', body: JSON.stringify({ uid, plan }) })
+
+  it('the coach writes a clean plan; the member is served it over their own copy', async () => {
+    await asMember()
+    await put({ state: { workouts: [{ d: '2026-09-01' }], routines: [{ id: 'own', name: 'Kendi' }], week: { 2: ['own'] }, customEx: [{ id: 'mine', n: 'x' }] }, baseRev: 0 })
+    await post('/api/logout', {})
+    await asCoach()
+    const w = await putPlan('U1', PLAN)
+    expect(w.rev).toBe(1)
+    expect(w.plan.week).toEqual({ 1: ['cA'], 3: ['cB'] })   // unknown ids, bad days and empty days dropped
+    expect(fb.docs.has('coachplan/U1')).toBe(true)
+    expect(JSON.parse(fb.docs.get('ogstate/U1').fields.state.stringValue).routines[0].id).toBe('own')   // member doc untouched
+    await post('/api/logout', {})
+
+    await asMember()
+    const d = await firebaseApi('/api/data')
+    expect(d.rev).toBe(1000001)
+    expect(d.state.routines.map(r => r.id)).toEqual(['cA', 'cB'])
+    expect(d.state.week).toEqual({ 1: ['cA'], 3: ['cB'] })
+    expect(d.state.customEx.map(c => c.id)).toEqual(['mine', 'cx1'])
+    expect(d.state.workouts).toEqual([{ d: '2026-09-01' }])
+    expect((await firebaseApi('/api/data/rev')).rev).toBe(1000001)
+  })
+
+  it('a member push uses the combined revision; a plan change meanwhile is a conflict', async () => {
+    await asCoach(); await putPlan('U1', PLAN); await post('/api/logout', {})
+    await asMember()
+    const r1 = await put({ state: { workouts: [{ d: '2026-09-02' }] }, baseRev: 1000000 })
+    expect(r1.rev).toBe(1000001)
+    await post('/api/logout', {}); await asCoach(); await putPlan('U1', { ...PLAN, routines: [PLAN.routines[0]] }); await post('/api/logout', {})
+    await asMember()
+    expect((await firebaseApi('/api/data/rev')).rev).toBe(2000001)   // the open app sees the coach's change
+    const e = await put({ state: { workouts: [{ d: '2026-09-03' }] }, baseRev: 1000001 }).catch(x => x)
+    expect(e.status).toBe(409)
+    expect(e.data.rev).toBe(2000001)
+    expect(e.data.state.routines.map(r => r.id)).toEqual(['cA'])
+    const r2 = await put({ state: { workouts: [{ d: '2026-09-03' }] }, baseRev: 2000001 })
+    expect(r2.rev).toBe(2000002)
+  })
+
+  it('a member with a plan but no document yet gets the plan, in Turkish', async () => {
+    await asCoach(); await putPlan('U1', PLAN); await post('/api/logout', {})
+    await asMember()
+    const d = await firebaseApi('/api/data')
+    expect(d.state).toMatchObject({ lang: 'tr' })
+    expect(d.state.routines).toHaveLength(2)
+  })
+
+  it('members cannot use the coach routes; the coach\'s own data is never overlaid', async () => {
+    await asMember()
+    await expect(firebaseApi('/api/coach/members')).rejects.toMatchObject({ status: 403 })
+    await expect(putPlan('U2', PLAN)).rejects.toMatchObject({ status: 403 })
+    expect(fb.docs.has('coachplan/U2')).toBe(false)
+    await post('/api/logout', {})
+    await asCoach()
+    await putPlan('ADM', PLAN)
+    await put({ state: { workouts: [], routines: [{ id: 'mine' }] }, baseRev: 0 })
+    const d = await firebaseApi('/api/data')
+    expect(d.state.routines.map(r => r.id)).toEqual(['mine'])
+    expect(d.rev).toBe(1)
+  })
+
+  it('refuses an empty plan', async () => {
+    await asCoach()
+    await expect(putPlan('U1', { routines: [] })).rejects.toMatchObject({ status: 400 })
+    await expect(putPlan('', PLAN)).rejects.toMatchObject({ status: 400 })
+  })
+
+  it('lists members (not the coach) with a one-line summary', async () => {
+    const str = v => ({ stringValue: v })
+    fb.docs.set('userdata/U1', { fields: { displayName: str('Seda'), email: str('uye@x.com') }, updateTime: 'x' })
+    fb.docs.set('userdata/U2', { fields: { displayName: str('Ali'), email: str('iki@x.com') }, updateTime: 'x' })
+    fb.docs.set('userdata/ADM', { fields: { displayName: str('Mertcan'), email: str('mertcan.tasyurekk@gmail.com') }, updateTime: 'x' })
+    const today = new Date().toISOString().slice(0, 10)
+    fb.docs.set('ogstate/U1', { fields: { state: str(JSON.stringify({ workouts: [{ d: '2026-01-01' }, { d: today }], bodyweight: [{ d: '2026-01-01', w: 80 }, { d: today, w: 78.5 }] })), rev: { integerValue: '4' } }, updateTime: 'y' })
+    await asCoach()
+    await putPlan('U2', PLAN)
+    const { members } = await firebaseApi('/api/coach/members')
+    expect(members.map(m => m.name)).toEqual(['Ali', 'Seda'])
+    const seda = members.find(m => m.uid === 'U1')
+    expect(seda).toMatchObject({ joined: true, lastWorkout: today, workouts: 2, workouts7: 1, lastWeight: 78.5, planAt: null })
+    const ali = members.find(m => m.uid === 'U2')
+    expect(ali).toMatchObject({ joined: false, workouts: 0, lastWorkout: null })
+    expect(ali.planAt).toBeTruthy()
+    const one = await firebaseApi('/api/coach/member?uid=U1')
+    expect(one.state.workouts).toHaveLength(2)
+    expect(one.plan).toBeNull()
   })
 })
