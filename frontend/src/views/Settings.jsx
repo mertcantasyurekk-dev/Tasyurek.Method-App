@@ -32,8 +32,11 @@ import { usePasskeys, PasskeysRow, DeviceLinkRow } from '../components/Passkeys.
 import { Section, Row, SelectRow, Switch, Segmented, Button, TextField } from '../components/ui.jsx'
 import { FIREBASE } from '../lib/firebase-api.js'
 import { importFromTracker } from '../components/TrackerImport.jsx'
+import { useCoached } from '../lib/coached.js'
+import { openLicenses } from '../components/Licenses.jsx'
 
 export default function Settings() {
+  const coached = useCoached()   // Taşyürek
   const nav = useNavigate()
   const S = useStore(s => s.S)
   const user = useStore(s => s.user)
@@ -147,7 +150,7 @@ export default function Settings() {
   // and the copy it exports is the one that has not reached the server.
   const doExport = async () => {
     const json = JSON.stringify(useStore.getState().S, null, 2)
-    const name = 'opengym-backup-' + todayISO() + '.json'
+    const name = (FIREBASE ? 'tasyurek-yedek-' : 'opengym-backup-') + todayISO() + '.json'
     // WKWebView can't download blob URLs — the native build hands the file to the share sheet.
     if (MOBILE) {
       try { await shareExport(json, name); toast(t('Backup exported')) } catch (e) { /* share sheet dismissed */ }
@@ -167,7 +170,7 @@ export default function Settings() {
     let out
     try { out = await exportBackupZip(st.S, { fetchOne: signedIn ? fetchToStore : null }) }
     catch { toast(t('Something went wrong')); return }
-    const name = 'opengym-backup-' + todayISO() + '.zip'
+    const name = (FIREBASE ? 'tasyurek-yedek-' : 'opengym-backup-') + todayISO() + '.zip'
     if (out.missing) toast(t(out.missing === 1 ? '{0} file could not be included' : '{0} files could not be included', out.missing))
     if (MOBILE) {
       try { await shareExportBlob(out.blob, name); if (!out.missing) toast(t('Backup exported')) } catch (e) { /* share sheet dismissed */ }
@@ -301,6 +304,9 @@ export default function Settings() {
           onClick={() => confirmSheet({ title: t('Reset demo data?'), message: t('Puts the example plan, workouts and weigh-ins back the way they started.'), confirmText: t('Reset'), onConfirm: () => { resetDemo(); nav('/home'); toast(t('Demo data reset')) } })} />
         <Row icon="rocket" iconTint="var(--indigo)" title={t('Self-host openGym')} subtitle={t('Passkey sign-in, sync across your devices, your own data.')} accessory="chevron"
           onClick={() => window.open(REPO, '_blank', 'noopener')} />
+      </> : user && FIREBASE ? <>
+        {/* Taşyürek: accounts live in Firebase Auth and are made by the coach — sign out is all there is. */}
+        <Row icon="signOut" iconTint="var(--red)" title={t('Sign out')} danger onClick={signOutHere} />
       </> : user ? <>
         {user.admin && <Row icon="wrench" iconTint="var(--indigo)" title={t('Admin dashboard')} accessory="chevron" onClick={() => nav('/admin')} />}
         <PasskeysRow state={passkeys.st} changed={credsChanged} />
@@ -547,14 +553,14 @@ export default function Settings() {
     <Section title={t('Data')}>
       {FIREBASE && <Row icon="shuffle" iconTint="var(--acc)" title="Eski Tracker'dan aktar"
         subtitle="Programın, antrenman geçmişin ve kilo kayıtların" accessory="chevron" onClick={importFromTracker} />}
-      <Row icon="sparkles" iconTint="var(--acc)" title={t('Load starter plan')} accessory="chevron" onClick={starterPlanSheet} />
+      {!FIREBASE && <><Row icon="sparkles" iconTint="var(--acc)" title={t('Load starter plan')} accessory="chevron" onClick={starterPlanSheet} />
       <Row icon="shuffle" iconTint="var(--teal)" title={t('Import from another app')}
         subtitle={t('FitNotes, Strong, Hevy — or body weight from Apple Health')}
         accessory="chevron" onClick={() => importRef.current.click()} />
       <Row icon="key" iconTint="var(--teal)" title={t('Import from Hevy')}
         subtitle={t('Pull your history with a Hevy Pro API key')}
-        accessory="chevron" onClick={importFromHevy} />
-      <Row icon="upload" iconTint="var(--blue)" title={t('Import backup')} accessory="chevron" onClick={() => fileRef.current.click()} />
+        accessory="chevron" onClick={importFromHevy} /></>}
+      {!coached && <Row icon="upload" iconTint="var(--blue)" title={t('Import backup')} accessory="chevron" onClick={() => fileRef.current.click()} />}
       <Row icon="download" iconTint="var(--blue)" title={t('Export backup (JSON)')} subtitle={hasMedia ? t('Without photos and videos') : undefined} accessory="chevron" onClick={doExport} />
       {hasMedia && <Row icon="download" iconTint="var(--blue)" title={t('Export with photos & videos (.zip)')} accessory="chevron" onClick={doExportZip} />}
       {hasMedia && <MediaRow />}
@@ -564,7 +570,7 @@ export default function Settings() {
         subtitle={t('Saves a dated copy to Documents/openGym after finishing a workout or editing a routine, and keeps the newest {0} — point a sync app at that folder, or copy it out by hand.', 14)}>
         <Switch checked={!!S.autoBackup} onChange={v => update(s => { s.autoBackup = v })} />
       </Row>}
-      <Row icon="trash" iconTint="var(--red)" title={t('Reset everything')} danger onClick={resetEverything} />
+      {!coached && <Row icon="trash" iconTint="var(--red)" title={t('Reset everything')} danger onClick={resetEverything} />}
     </Section>
     <input ref={fileRef} type="file" accept=".json,.zip,application/json,application/zip" style={{ display: 'none' }} onChange={doImport} />
     {/* Reset after reading so picking the same file twice still fires onChange. */}
@@ -582,7 +588,7 @@ export default function Settings() {
         On Android the row is always there — it checks on demand and installs when a release is
         newer (checksum verified, see onUpdateRowClick). On the web the app updates with its
         server, so the row points at the APK for the phone instead. iOS has no APK: nothing. */}
-    {(!MOBILE || android) && <Section title={t('Updates')}
+    {!FIREBASE && (!MOBILE || android) && <Section title={t('Updates')}
       footer={MOBILE ? t('Releases are checked on gitlab.com. The download is verified against its checksum before the installer opens.') : t('The web app updates together with your server. The Android app installs its own updates from here.')}>
       {MOBILE
         ? <Row icon="download" iconTint="var(--acc)"
@@ -599,11 +605,16 @@ export default function Settings() {
         telling people to look for it, and where it was not. On the phone build there is no
         address bar and no about box, so without this there is no way to tell which build you
         are running, or whether an update actually installed. */}
+    {FIREBASE ? <div className="dim small" style={{ textAlign: 'center', marginTop: 4, lineHeight: 1.6 }}>
+      Taşyürek Method · Mertcan Taşyürek<br />Personal Training & Online Coaching<br />
+      <a href="#" onClick={e => { e.preventDefault(); openLicenses() }}>Açık kaynak lisansları</a>
+    </div> : <>
     <div className="dim small" style={{ textAlign: 'center', marginTop: 4, lineHeight: 1.6 }}>
       openGym v{__APP_VERSION__} · {t('free & open source (AGPL v3)')}<br />
       <a href="https://github.com/DuarteSantos8/openGym" target="_blank" rel="noopener">source code</a> · exercise data: hasaneyldrm/exercises-dataset (MIT)<br />
       exercise images and animations © <a href="https://gymvisual.com/" target="_blank" rel="noopener">Gym visual</a>
     </div>
+    </>}
   </div>
 }
 

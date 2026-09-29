@@ -4,6 +4,7 @@ import { useStore } from '../store/useStore.js'
 import { effectiveRoutines, effectiveRoutineIds, nextTrainingDay, streakWeeks, lastBW, setsDoneActive } from '../lib/history.js'
 import { fmtNum, fmtDate, todayISO, isoOf, weekKey, weekStartOf, weekDayOffset, DAYS, DAYN } from '../lib/format.js'
 import { t, dateLocale } from '../lib/i18n.js'
+import { useCoached } from '../lib/coached.js'   // Taşyürek
 import { bwSheet, goalSheet, dayOverrideSheet, calendarSheet, startFlow, starterPlanSheet, bwDeltaColor, weighInsSheet } from '../sheets.jsx'
 import LineChart from '../components/LineChart.jsx'
 import Icon from '../components/Icon.jsx'
@@ -13,6 +14,7 @@ import { glyphOf } from '../lib/glyphs.js'
 
 // Home = what to do now + a quick glance. Deep charts & history live in Stats.
 export default function Home() {
+  const coached = useCoached()
   const nav = useNavigate()
   const S = useStore(s => s.S)
   const user = useStore(s => s.user)
@@ -65,7 +67,7 @@ export default function Home() {
 
   return <div className="narrow">
     <div className="hdr">
-      <div><h1>{user ? t('Hi {0}', user.name) : 'openGym'}</h1><div className="sub">{today.toLocaleDateString(dateLocale(), { weekday: 'long', day: 'numeric', month: 'long' })}</div></div>
+      <div><h1>{user ? t('Hi {0}', user.name) : 'Taşyürek Method'}</h1><div className="sub">{today.toLocaleDateString(dateLocale(), { weekday: 'long', day: 'numeric', month: 'long' })}</div></div>
       <button className="iconbtn" onClick={() => nav('/settings')} aria-label={t('Settings')}><Icon name="gear" /></button>
     </div>
 
@@ -136,9 +138,10 @@ export default function Home() {
           <span className="lrow-i"><Icon name="sparkles" /></span>
           <div className="big" style={{ fontSize: 22 }}>{t('Welcome!')}</div>
         </div>
-        <div className="muted small" style={{ marginBottom: 12 }}>{t('Set up your weekly routine to get going — or load a ready-made starter plan.')}</div>
+        {!coached && <div className="muted small" style={{ marginBottom: 12 }}>{t('Set up your weekly routine to get going — or load a ready-made starter plan.')}</div>}
+        {coached ? <div className="muted small">Koçun programını hazırlıyor. Hazır olduğunda burada ve Programım sekmesinde görünecek.</div> : <>
         <Button variant="primary" icon="sparkles" onClick={starterPlanSheet}>{t('Load starter plan')}</Button>
-        <div style={{ height: 8 }} /><Button onClick={() => nav('/plan')}>{t('Build my own plan')}</Button>
+        <div style={{ height: 8 }} /><Button onClick={() => nav('/plan')}>{t('Build my own plan')}</Button></>}
       </div>
     )}
 

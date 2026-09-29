@@ -94,6 +94,8 @@ async function readDoc(a) {
   }
   const rev = Number(f.rev?.integerValue || 0)
   if (state) state._rev = rev
+  // A profile that never picked a language is a Turkish one here (openGym's default is English).
+  if (state && !state.lang) state.lang = 'tr'
   return { exists: true, state, rev, updateTime: body.updateTime }
 }
 

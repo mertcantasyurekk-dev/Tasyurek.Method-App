@@ -101,8 +101,11 @@ export default function Login() {
   // in is e-mail + password. No passkeys, no sign-up, no device codes, no guest profile.
   if (FIREBASE) return (
     <div className="narrow" style={wrap}>
-      {head}
-      <div className="muted" style={{ marginBottom: 34 }}>Taşyürek Method</div>
+      <div style={{ display: 'flex', justifyContent: 'center' }}>
+        <img src="icon-180.png" alt="" width="84" height="84" style={{ borderRadius: 20 }} />
+      </div>
+      <h1 style={{ fontSize: 30, fontWeight: 700, letterSpacing: '-.02em', margin: '16px 0 4px' }}>Taşyürek Method</h1>
+      <div className="muted" style={{ marginBottom: 34 }}>Mertcan Taşyürek · Personal Training & Online Coaching</div>
       <Button variant="primary" icon="key" onClick={() => openPasswordSignIn()}>{t('Sign in with password')}</Button>
       <div className="dim small" style={{ marginTop: 26, lineHeight: 1.5 }}>Koçunun verdiği e-posta ve şifreyle giriş yap.</div>
     </div>

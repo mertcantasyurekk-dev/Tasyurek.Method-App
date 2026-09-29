@@ -14,6 +14,25 @@ Sunucu yok. Uygulama GitHub Pages'te statik olarak çalışır ve Firebase'e (Au
 - `.github/workflows/pages.yml`: Firebase modunda derleyip Pages'e yayınlar. GIF'ler tracker reposundan gelir.
 - Docker/ghcr yayın ve mirror iş akışları kaldırıldı.
 
+## Marka
+
+Firebase derlemesinde üye her yerde "Taşyürek Method" görür: giriş ekranı (MT logosu), ana ekran ikonu,
+sayfa başlığı, manifest ve çeviri metinleri (`i18n-core.js` içindeki `t()` "openGym"i marka adıyla değiştirir).
+AGPL'in istediği bildirimler Ayarlar'ın en altındaki **Açık kaynak lisansları** bağlantısında
+(`components/Licenses.jsx`): orijinal telif, lisans, garanti yok ifadesi ve bu reponun kaynak kodu.
+Bu bağlantı ve orijinal telif satırı kaldırılmamalıdır.
+
+## Koçlu üye kilidi
+
+`lib/coached.js`: `isCoached(user)` = Firebase derlemesi ve admin değil. Koçlu üye:
+- Plan yerine salt okunur **Programım** ekranını görür (`views/CoachedPlan.jsx`); rutin düzenleme adresi Plan'a yönlenir.
+- Antrenmanda sadece set girer: hareket/set ekleme-çıkarma, değiştirme, sıralama, süperset, ilerleme ayarı,
+  seansa rutin ekleme, yeniden adlandırma yok. Serbest antrenman yok (başlatma ve geçmişe kayıtta).
+- Egzersizler'de kendi hareketini oluşturamaz, plana ekleyemez.
+- Ayarlar'da sadece çıkış, tracker'dan aktarma ve yedeği dışa aktarma; içe aktarma ve sıfırlama yok.
+- Başka günün rutinini seçmek (hasta olunca vb.) serbest: sadece koçun rutinleri arasında seçim.
+Admin (koç) tam uygulamayı kullanır. AI Koç Firebase derlemesinde zaten kapalıdır (`/api/config` koç bilgisi göndermez).
+
 ## Eski Tracker'dan aktarma
 
 Ayarlar → Veriler → **Eski Tracker'dan aktar**. Her üye kendi hesabında yapar.

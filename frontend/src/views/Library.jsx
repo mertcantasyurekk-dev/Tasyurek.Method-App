@@ -11,10 +11,12 @@ import { Thumb } from '../components/Media.jsx'
 import { exerciseDetailSheet, addToRoutineSheet, customExSheet } from '../sheets.jsx'
 import Icon from '../components/Icon.jsx'
 import { Button } from '../components/ui.jsx'
+import { useCoached } from '../lib/coached.js'   // Taşyürek
 import { tappable, useRevealActiveChip } from '../lib/use-sheet-keyboard.js'
 import { isFav, sortFavouritesFirst } from '../lib/favourites.js'
 
 export default function Library() {
+  const coached = useCoached()
   const nav = useNavigate()
   const S = useStore(s => s.S)
   const [q, setQ] = useState('')
@@ -63,17 +65,17 @@ export default function Library() {
       {eqOpts.map(x => <button key={x} className={'chip' + (eqOn === x ? ' on' : '')} onClick={() => { setEq(x); setShown(40) }}>{t(x)}</button>)}
     </div>}
     <div className="list">
-      <div className="item" {...tappable(() => customExSheet(null, ex => exerciseDetailSheet(ex), q.trim()))}>
+      {!coached && <div className="item" {...tappable(() => customExSheet(null, ex => exerciseDetailSheet(ex), q.trim()))}>
         <div className="thumb thumb-x"><Icon name="sparkles" /></div>
         <div className="grow"><div className="tt">{t('Create your own exercise')}</div><div className="ss">{t('name + body part, and a photo or video if you like')}</div></div><Icon name="plus" className="chev" />
-      </div>
+      </div>}
       {f.slice(0, shown).map(e => {
         const best = bestWeightFor(S, e.id)
         return <div key={e.id} className="item" {...tappable(() => exerciseDetailSheet(e))}>
           <Thumb ex={e} />
           <div className="grow"><div className={`tt ${exerciseNameClass(e)}`}>{isFav(S, e.id) && <Icon name="starFill" className="fav-star" />}{exerciseNameFor(e)}</div><div className="ss capitalize">{t(MUSCLE_NAME[e.tg] || e.tg || e.bp)} · {t(e.eq)}</div></div>
           {best > 0 && <span className="tag acc">{fmtNum(best)}</span>}
-          <Button size="sm" variant="tinted" icon="plus" onClick={ev => { ev.stopPropagation(); addToRoutineSheet(e) }}>{t('Plan')}</Button>
+          {!coached && <Button size="sm" variant="tinted" icon="plus" onClick={ev => { ev.stopPropagation(); addToRoutineSheet(e) }}>{t('Plan')}</Button>}
         </div>
       })}
       {f.length === 0 && <div className="empty"><div className="ico"><Icon name="magnifier" /></div>{t('No match')}</div>}

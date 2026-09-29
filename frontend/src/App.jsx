@@ -29,6 +29,8 @@ import MobileOnboarding from './views/MobileOnboarding.jsx'
 import Home from './views/Home.jsx'
 import CheckIn from './views/CheckIn.jsx'
 import Plan from './views/Plan.jsx'
+import CoachedPlan from './views/CoachedPlan.jsx'   // Taşyürek
+import { useCoached } from './lib/coached.js'
 import RoutineEdit from './views/RoutineEdit.jsx'
 import Workout from './views/Workout.jsx'
 import Stats from './views/Stats.jsx'
@@ -65,6 +67,7 @@ function Shell() {
   const loc = useLocation()
   const navType = useNavigationType()
   const { S, user, ready } = useStore()
+  const coached = useCoached()   // Taşyürek: members get the coach's program, read-only
   // iOS: whether timer sounds get past the ring/silent switch (Settings → Sounds). Page-level,
   // so it is applied here on load and on change rather than at each beep.
   useEffect(() => { setPlayOnSilent(!!S.soundOnSilent) }, [S.soundOnSilent])
@@ -179,8 +182,8 @@ function Shell() {
               {/* Gym check-in — switched off in Settings, the route falls through to the
                   catch-all redirect below. */}
               {S.checkIn !== false && <Route path="/checkin" element={<CheckIn />} />}
-              <Route path="/plan" element={<Plan />} />
-              <Route path="/plan/r/:id" element={<RoutineEdit />} />
+              <Route path="/plan" element={coached ? <CoachedPlan /> : <Plan />} />
+              <Route path="/plan/r/:id" element={coached ? <Navigate to="/plan" replace /> : <RoutineEdit />} />
               <Route path="/workout" element={<Workout />} />
               <Route path="/stats" element={<Stats />} />
               <Route path="/history" element={<History />} />

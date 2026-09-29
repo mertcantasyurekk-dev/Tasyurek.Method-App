@@ -68,8 +68,11 @@ export const dateLocale = () => DATE_LOCALES[lang] || 'en-GB'
 export const getVersion = () => version
 
 // Translate a source string; {0},{1}… are replaced with args (also on the English fallback).
+// Taşyürek Method build: the product name the member sees is the coach's brand, in every language.
+const BRAND = import.meta.env?.VITE_FIREBASE === '1' ? 'Taşyürek Method' : null
 export function t(s, ...args) {
   let v = dict[s] || s
+  if (BRAND && v.includes('openGym')) v = v.replaceAll('openGym', BRAND)
   for (let i = 0; i < args.length; i++) v = v.replaceAll('{' + i + '}', args[i])
   return v
 }

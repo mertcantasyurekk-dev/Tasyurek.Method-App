@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
+import { coachedNow as L } from '../lib/coached.js'   // Taşyürek: coached members only log
 import SwipeCards from '../components/SwipeCards.jsx'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
@@ -62,8 +63,9 @@ function StartChooser() {
         <div className="grow"><div className="tt">{r.name}</div><div className="ss">{exCount(r.ex.length)}</div></div>
         <span className="tag acc">{t('Start')}</span></div>)}</div></>}
     <div style={{ height: 14 }} />
-    <Button icon="shuffle" onClick={() => startFlow([])}>{t('Freestyle workout (pick as you go)')}</Button>
-    {!S.routines.length && <><div style={{ height: 10 }} /><Button variant="primary" onClick={() => nav('/plan')}>{t('Build a plan first')}</Button></>}
+    {!L() && <Button icon="shuffle" onClick={() => startFlow([])}>{t('Freestyle workout (pick as you go)')}</Button>}
+    {!L() && !S.routines.length && <><div style={{ height: 10 }} /><Button variant="primary" onClick={() => nav('/plan')}>{t('Build a plan first')}</Button></>}
+    {L() && !S.routines.length && <div className="empty"><div className="ico"><Icon name="clipboard" /></div>Koçun programını henüz yüklemedi.</div>}
   </div>
 }
 
@@ -349,16 +351,16 @@ function ExerciseBlock({ entryIdx, compact, dense, editing, onToggle, onToggleSi
       { icon: 'pencil', label: entry.note ? t('Edit note') : t('Add note'), sub: entry.note || undefined, onClick: () => exerciseNoteSheet(entryIdx) },
       { icon: 'info', label: t('Details'), onClick: () => exerciseDetailSheet(ex) },
       { icon: 'history', label: t('History'), sub: last ? t('Last time') + ' ' + fmtDate(last.d) : undefined, onClick: () => exerciseHistorySheet(entry.id) },
-      onProgressionSettings && { icon: 'chartLine', label: t('Progression settings'), sub: guidance ? t(guidance.policyLabel) : undefined, onClick: onProgressionSettings },
-      onNoProg && { icon: 'pause', label: t('Don’t count for progression'), sub: t('This exercise, this session only'), on: entry.noProg === true, onClick: () => onNoProg(entry.noProg !== true) },
+      !L() && onProgressionSettings && { icon: 'chartLine', label: t('Progression settings'), sub: guidance ? t(guidance.policyLabel) : undefined, onClick: onProgressionSettings },
+      !L() && onNoProg && { icon: 'pause', label: t('Don’t count for progression'), sub: t('This exercise, this session only'), on: entry.noProg === true, onClick: () => onNoProg(entry.noProg !== true) },
       plateLoading && { icon: 'plate', label: t('Plate loading'), sub: loadSummary, onClick: () => barWeightSheet(entry.id, cfg) },
-      { icon: 'flame', label: t('Add warm-up set'), onClick: onAddWarmup },
-      onPairPrev && { icon: 'link', label: t('Make superset with previous'), onClick: onPairPrev },
-      onPairNext && { icon: 'link', label: t('Make superset with next'), onClick: onPairNext },
-      onSwap && { icon: 'shuffle', label: t('Swap exercise'), onClick: onSwap, disabled: busy },
-      onMoveUp && { icon: 'chevronUp', label: t('Move up'), onClick: onMoveUp, disabled: busy || !canMoveUp },
-      onMoveDown && { icon: 'chevronDown', label: t('Move down'), onClick: onMoveDown, disabled: busy || !canMoveDown },
-      onRemoveExercise && { icon: 'trash', label: t('Remove exercise'), onClick: onRemoveExercise, danger: true, disabled: busy },
+      !L() && { icon: 'flame', label: t('Add warm-up set'), onClick: onAddWarmup },
+      !L() && onPairPrev && { icon: 'link', label: t('Make superset with previous'), onClick: onPairPrev },
+      !L() && onPairNext && { icon: 'link', label: t('Make superset with next'), onClick: onPairNext },
+      !L() && onSwap && { icon: 'shuffle', label: t('Swap exercise'), onClick: onSwap, disabled: busy },
+      !L() && onMoveUp && { icon: 'chevronUp', label: t('Move up'), onClick: onMoveUp, disabled: busy || !canMoveUp },
+      !L() && onMoveDown && { icon: 'chevronDown', label: t('Move down'), onClick: onMoveDown, disabled: busy || !canMoveDown },
+      !L() && onRemoveExercise && { icon: 'trash', label: t('Remove exercise'), onClick: onRemoveExercise, danger: true, disabled: busy },
     ],
   })
   // The set number is the set's own menu: drop / burst / remove — three things that used to
@@ -369,9 +371,9 @@ function ExerciseBlock({ entryIdx, compact, dense, editing, onToggle, onToggleSi
       title: (warm ? t('Warm-up') : t('Set {0}', entry.sets.slice(0, i + 1).filter(x => isWarmupRow(x) === warm).length)),
       subtitle: setLabel(entry.id, s, entry.target, speedUnit),
       items: [
-        !warm && mode === 'reps' && !isRestPauseSet(s) && { icon: 'arrowDown', label: t('Drop set'), sub: t('+ Drop'), onClick: () => addDropRow(i) },
-        !warm && mode === 'reps' && !isDropSet(s) && { icon: 'bolt', label: t('Rest-pause burst'), sub: t('+ Burst'), onClick: () => addBurstRow(i) },
-        { icon: 'trash', label: t('Remove this set'), danger: true, disabled: !editing && entry.sets.length <= 1, onClick: () => onRemoveSetAt(i) },
+        !L() && !warm && mode === 'reps' && !isRestPauseSet(s) && { icon: 'arrowDown', label: t('Drop set'), sub: t('+ Drop'), onClick: () => addDropRow(i) },
+        !L() && !warm && mode === 'reps' && !isDropSet(s) && { icon: 'bolt', label: t('Rest-pause burst'), sub: t('+ Burst'), onClick: () => addBurstRow(i) },
+        !L() && { icon: 'trash', label: t('Remove this set'), danger: true, disabled: !editing && entry.sets.length <= 1, onClick: () => onRemoveSetAt(i) },
       ],
     })
   }
@@ -473,7 +475,7 @@ function ExerciseBlock({ entryIdx, compact, dense, editing, onToggle, onToggleSi
           <span className="subn">{t('Drop {0}', di + 1)}</span>
           {miniStepper(d.w, loadStep, true, v => setDropField(i, di, 'w', v, side), true)}
           {miniStepper(d.r, 1, false, v => setDropField(i, di, 'r', v, side))}
-          <button className="iconbtn" aria-label={t('Remove drop')} onClick={() => removeDrop(i, di)}><Icon name="xmark" /></button>
+          {!L() && <button className="iconbtn" aria-label={t('Remove drop')} onClick={() => removeDrop(i, di)}><Icon name="xmark" /></button>}
         </div>
       ))}
       {clustersOf(sd).map((c, ci) => (
@@ -481,7 +483,7 @@ function ExerciseBlock({ entryIdx, compact, dense, editing, onToggle, onToggleSi
           <span className="subn">{t('Burst {0}', ci + 1)}</span>
           {miniStepper(c.r, 1, false, v => setClusterField(i, ci, v, side))}
           <span className="dim small">{c.restSec}s</span>
-          <button className="iconbtn" aria-label={t('Remove burst')} onClick={() => removeCluster(i, ci)}><Icon name="xmark" /></button>
+          {!L() && <button className="iconbtn" aria-label={t('Remove burst')} onClick={() => removeCluster(i, ci)}><Icon name="xmark" /></button>}
         </div>
       ))}
     </>
@@ -545,7 +547,7 @@ function ExerciseBlock({ entryIdx, compact, dense, editing, onToggle, onToggleSi
     {planLine}
     {refLine}
     {guidance && onProgressionSettings && <button type="button" className={'progline' + (plan.kind === 'deload' ? ' warn' : '')}
-      aria-label={t('Open progression settings')} onClick={onProgressionSettings}>
+      aria-label={L() ? undefined : t('Open progression settings')} onClick={L() ? undefined : onProgressionSettings} style={L() ? { cursor: 'default' } : undefined}>
       <Icon name={plan.kind === 'up' ? 'arrowUp' : plan.kind === 'deload' ? 'arrowDown' : 'lightbulb'} />
       <span><strong>{t(guidance.policyLabel)}</strong> · {t(...guidance.why)}</span>
     </button>}
@@ -598,7 +600,7 @@ function ExerciseBlock({ entryIdx, compact, dense, editing, onToggle, onToggleSi
                 <span className="subn">{t('Drop {0}', di + 1)}</span>
                 {miniStepper(d.w, loadStep, true, v => setDropField(i, di, 'w', v), true)}
                 {miniStepper(d.r, 1, false, v => setDropField(i, di, 'r', v))}
-                <button className="iconbtn" aria-label={t('Remove drop')} onClick={() => removeDrop(i, di)}><Icon name="xmark" /></button>
+                {!L() && <button className="iconbtn" aria-label={t('Remove drop')} onClick={() => removeDrop(i, di)}><Icon name="xmark" /></button>}
               </div>
             )).flatMap((el, di) => [el, <Fragment key={'dl' + di}>{loadLine(i + ':d' + di)}</Fragment>])}
             {clustersOf(s).map((c, ci) => (
@@ -606,10 +608,10 @@ function ExerciseBlock({ entryIdx, compact, dense, editing, onToggle, onToggleSi
                 <span className="subn">{t('Burst {0}', ci + 1)}</span>
                 {miniStepper(c.r, 1, false, v => setClusterField(i, ci, v))}
                 <span className="dim small">{c.restSec}s</span>
-                <button className="iconbtn" aria-label={t('Remove burst')} onClick={() => removeCluster(i, ci)}><Icon name="xmark" /></button>
+                {!L() && <button className="iconbtn" aria-label={t('Remove burst')} onClick={() => removeCluster(i, ci)}><Icon name="xmark" /></button>}
               </div>
             ))}
-            {wc.setShortcuts && <div className="setextra">
+            {!L() && wc.setShortcuts && <div className="setextra">
               {!isRestPauseSet(s) && <button className="chip add" onClick={() => addDropRow(i)}><Icon name="arrowDown" />{t('+ Drop')}</button>}
               {!isDropSet(s) && <button className="chip add" onClick={() => addBurstRow(i)}><Icon name="bolt" />{t('+ Burst')}</button>}
             </div>}
@@ -617,7 +619,7 @@ function ExerciseBlock({ entryIdx, compact, dense, editing, onToggle, onToggleSi
         </div>
       })}
       <div style={{ height: 8 }} />
-      {wc.setShortcuts ? <div className="row" style={{ flexWrap: 'wrap' }}>
+      {L() ? null : wc.setShortcuts ? <div className="row" style={{ flexWrap: 'wrap' }}>
         <Button size="sm" icon="flame" onClick={onAddWarmup}>{t('Add warm-up set')}</Button>
         <Button size="sm" icon="minus" disabled={entry.sets.length <= 1} onClick={onRemoveSet}>{t('Remove set')}</Button>
         <Button size="sm" icon="plus" onClick={onAddSet}>{t('Add set')}</Button>
@@ -929,9 +931,9 @@ function ActiveWorkout() {
   const openViewMenu = () => menuSheet({
     items: [
       A.backfill && A.entries.length > 0 && { icon: 'checkCircle', label: t('Mark all sets done'), onClick: markAllDone },
-      { icon: 'pencil', label: t('Rename workout'), onClick: renameWorkoutSheet },
-      !editing && { icon: 'plus', label: t('Add routine'), sub: t('Bring another routine into this session'), onClick: addRoutineToSessionSheet },
-      noProgSwitchable && { icon: 'pause', label: t('Don’t count for progression'), sub: t('Every exercise in this workout'), on: sessionNoProg(A), onClick: toggleSessionNoProg },
+      !L() && { icon: 'pencil', label: t('Rename workout'), onClick: renameWorkoutSheet },
+      !L() && !editing && { icon: 'plus', label: t('Add routine'), sub: t('Bring another routine into this session'), onClick: addRoutineToSessionSheet },
+      !L() && noProgSwitchable && { icon: 'pause', label: t('Don’t count for progression'), sub: t('Every exercise in this workout'), on: sessionNoProg(A), onClick: toggleSessionNoProg },
       { icon: 'list', label: t('Layout'), sub: LAYOUT_LABEL[workoutView] || LAYOUT_LABEL.cards, onClick: openLayoutMenu },
     ],
   })
@@ -1347,8 +1349,8 @@ function ActiveWorkout() {
       <Button trailingIcon="chevronRight" disabled={unitIdx < 0 || unitIdx >= units.length - 1} onClick={() => navigateUnit(1)}>{t('Next')}</Button>
     </div>}
     {!listMode && <div style={{ height: 10 }} />}
-    {wc.exerciseButtons && listMode && A.entries.length > 0 && <div className="muted small" style={{ marginBottom: 6 }}>{t('Move, swap and remove below act on the exercise marked {0}.', t('Current'))}</div>}
-    <Button onClick={() => exercisePicker((ex, quick) => {
+    {!L() && wc.exerciseButtons && listMode && A.entries.length > 0 && <div className="muted small" style={{ marginBottom: 6 }}>{t('Move, swap and remove below act on the exercise marked {0}.', t('Current'))}</div>}
+    {!L() && <Button onClick={() => exercisePicker((ex, quick) => {
       // A freehand add inherits the current unit's routine (its `rid`) so it lands in that
       // routine's block in a combined session and gets a real prescription; a routine-less
       // freestyle session has no `rid` to inherit. It inherits the block's `noProg` too: an
@@ -1390,8 +1392,8 @@ function ActiveWorkout() {
       if (quick) { commit(seed || defaultConfig(ex.id)); useUI.getState().toast(t('“{0}” added to {1}', exerciseNameText(ex), routine ? routine.name : t('Freestyle'))) }
       // The confirm names what it changes: this workout, never the routine behind it.
       else exConfigSheet(ex, null, commit, null, routine, seed, null, t('Add to this workout'))
-    })} icon="plus">{t('Add exercise')}</Button>
-    {wc.exerciseButtons && A.entries.length > 0 && <>
+    })} icon="plus">{t('Add exercise')}</Button>}
+    {!L() && wc.exerciseButtons && A.entries.length > 0 && <>
       <div style={{ height: 6 }} />
       <div className="row">
         <Button size="sm" icon="chevronUp" aria-label={t('Move up')}

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { coachedNow } from './lib/coached.js'   // Taşyürek: coached members only log
 import { useStore } from './store/useStore.js'
 import { useUI } from './store/useUI.js'
 import { EXDB, EXIDX, BODYPARTS, isCardio, isBodyweightEq, allExercises, equipmentOf, smOf, searchExercises, exOr, isAssisted, betterWeight, beatsWeight } from './lib/exercises.js'
@@ -823,9 +824,9 @@ function ExerciseDetail({ ex, close }) {
     </div>
     {ex.desc && <div className="exnote">{ex.desc}</div>}
     {best > 0 && <div className="small row" style={{ marginBottom: 6, gap: 5 }}><Icon name="trophy" style={{ fontSize: 14, color: 'var(--yellow)' }} />{t('Best:')} <b className="accent" style={{ whiteSpace: 'nowrap' }}>{fmtNum(best)} {st.unit}</b>{last ? ` · ${t('last')} ${fmtDate(last.d)}: ${last.sets.map(s => setLabel(ex.id, s, last.target, speedUnitOf(st))).join(', ')}` : ''}</div>}
-    <Button variant="primary" icon="plus" style={{ margin: '10px 0 4px' }} onClick={() => addToRoutineSheet(ex)}>{t('Add to my plan')}</Button>
+    {!coachedNow() && <Button variant="primary" icon="plus" style={{ margin: '10px 0 4px' }} onClick={() => addToRoutineSheet(ex)}>{t('Add to my plan')}</Button>}
     {last && <Button icon="history" style={{ marginTop: 4 }} onClick={() => exerciseHistorySheet(ex.id)}>{t('History')}</Button>}
-    {ex.custom && <div className="row" style={{ gap: 8, marginTop: 8 }}>
+    {!coachedNow() && ex.custom && <div className="row" style={{ gap: 8, marginTop: 8 }}>
       <Button icon="pencil" style={{ flex: 1 }} onClick={() => { close(); customExSheet(ex) }}>{t('Edit')}</Button>
       <Button variant="danger" icon="trash" style={{ flex: 1 }} onClick={() => deleteCustomEx(ex, close)}>{t('Delete')}</Button>
     </div>}
@@ -2206,10 +2207,10 @@ function LogPastWorkout({ initial, close }) {
   const [date, setDate] = useState(initial?.iso || isoOf(yesterday))
   const [time, setTime] = useState('18:00')
   const [dur, setDur] = useState(60)
-  const [routineId, setRoutineId] = useState(planned.length > 1 ? PLANNED_DAY : planned[0]?.id || '')
+  const [routineId, setRoutineId] = useState(planned.length > 1 ? PLANNED_DAY : planned[0]?.id || (coachedNow() ? st.routines[0]?.id || '' : ''))
   const today = todayISO()
   const options = [
-    { value: '', label: t('Freestyle') },
+    ...(coachedNow() ? [] : [{ value: '', label: t('Freestyle') }]),
     ...(planned.length > 1 ? [{ value: PLANNED_DAY, label: deriveSessionName(planned.map(r => r.name)) }] : []),
     ...st.routines.map(r => ({ value: r.id, label: r.name })),
   ]
