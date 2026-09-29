@@ -96,6 +96,9 @@ async function readDoc(a) {
   if (state) state._rev = rev
   // A profile that never picked a language is a Turkish one here (openGym's default is English).
   if (state && !state.lang) state.lang = 'tr'
+  // Profiles saved before the brand accent existed carry openGym's green: move them to the gold
+  // once. The stamp keeps a later choice of another colour from being undone.
+  if (state && !state.brandAccent) { state.accent = 'brand'; state.brandAccent = 1 }
   return { exists: true, state, rev, updateTime: body.updateTime }
 }
 

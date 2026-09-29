@@ -100,6 +100,10 @@
 :root[data-accent="red"]   { --acc:var(--red);    --acc-2:#d70015; --on-acc:#fff }
 :root[data-accent="teal"]  { --acc:var(--teal);   --acc-2:#0071a4; --on-acc:#000 }
 :root[data-accent="gold"]  { --acc:var(--yellow); --acc-2:#b25000; --on-acc:#000 }
+/* Taşyürek Method: the logo's gold, with navy ink (6.6:1). Light theme darkens the gold so it
+   still reads as text on a pale background (3.6:1), and keeps the navy ink on it (3.9:1). */
+:root[data-accent="brand"] { --acc:#C9A04E; --acc-2:#9A7A2E; --on-acc:#0F2338 }
+:root[data-theme="light"][data-accent="brand"] { --acc:#9C7A2C; --acc-2:#7A5F21; --on-acc:#0F2338 }
 /* Label colour on a filled accent button is picked per accent by measured contrast,
    not by taste. Button text is 17px/600, so the AA bar is 3:1 (large text). White on
    the light-theme green is 2.22:1 and on teal 2.57:1 — both fail, and green is the

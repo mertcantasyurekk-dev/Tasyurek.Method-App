@@ -185,3 +185,15 @@ describe('tracker payload', () => {
     expect(await firebaseApi('/api/tracker')).toEqual({ payload: null })
   })
 })
+
+describe('profile defaults', () => {
+  it('fills a missing language with Turkish and moves an old profile to the brand gold once', async () => {
+    await post('/api/login/password', { name: 'uye@x.com', password: 'dogru' })
+    await put({ state: { workouts: [], accent: 'lime' }, baseRev: 0 })
+    let d = (await firebaseApi('/api/data')).state
+    expect(d).toMatchObject({ lang: 'tr', accent: 'brand', brandAccent: 1 })
+    await put({ state: { workouts: [], accent: 'sky', lang: 'en', brandAccent: 1 }, baseRev: 1 })
+    d = (await firebaseApi('/api/data')).state
+    expect(d).toMatchObject({ lang: 'en', accent: 'sky' })   // a later choice is kept
+  })
+})
