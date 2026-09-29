@@ -235,19 +235,19 @@ async function withName(a) {
 // The coach's side. Firestore's rules are the real gate (only the coach may list members or write
 // a plan); the checks here just answer early and clearly.
 
+// Every document of a collection, through :runQuery — the call the old tracker's admin panel has
+// always used against these rules. `maskFields` limits the fields returned.
 async function listDocs(a, collection, maskFields) {
-  const out = []
-  let token = ''
-  const mask = (maskFields || []).map(f => '&mask.fieldPaths=' + encodeURIComponent(f)).join('')
-  for (let page = 0; page < 20; page++) {
-    const url = `${DOCS()}/${collection}?pageSize=300${mask}${token ? '&pageToken=' + encodeURIComponent(token) : ''}`
-    const { r, body } = await jsonFetch(url, { headers: { Authorization: 'Bearer ' + a.idToken } })
-    if (!r.ok) throw err(r.status, body?.error?.message || 'list failed')
-    for (const d of body.documents || []) out.push({ id: decodeURIComponent(d.name.split('/').pop()), fields: d.fields || {}, updateTime: d.updateTime })
-    if (!body.nextPageToken) break
-    token = body.nextPageToken
-  }
-  return out
+  const structuredQuery = { from: [{ collectionId: collection }] }
+  if (maskFields?.length) structuredQuery.select = { fields: maskFields.map(f => ({ fieldPath: f })) }
+  const { r, body } = await jsonFetch(`${DOCS()}:runQuery`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + a.idToken },
+    body: JSON.stringify({ structuredQuery })
+  })
+  const msg = (!r.ok && (body?.error?.message || (Array.isArray(body) && body[0]?.error?.message))) || null
+  if (!r.ok || !Array.isArray(body)) throw err(r.status || 500, `${collection} listelenemedi: ${msg || r.status}`)
+  return body.filter(x => x?.document).map(x => ({ id: decodeURIComponent(x.document.name.split('/').pop()), fields: x.document.fields || {}, updateTime: x.document.updateTime }))
 }
 
 const parseState = f => { try { return f.state?.stringValue ? JSON.parse(f.state.stringValue) : null } catch { return null } }
@@ -264,11 +264,12 @@ function summaryOf(state) {
 }
 
 async function coachMembers(a) {
-  const [users, states, plans] = await Promise.all([
-    listDocs(a, 'userdata', ['displayName', 'email']),
-    listDocs(a, CFG.collection),
-    listDocs(a, 'coachplan', ['planAt', 'targets'])
-  ])
+  // Members come from userdata; the other two only fill in the summary. If one of those cannot be
+  // read (a missing Firestore rule, say) the list still opens, with a warning naming the collection.
+  const users = await listDocs(a, 'userdata', ['displayName', 'email'])
+  const warnings = []
+  const soft = p => p.catch(e => { warnings.push(e.message); return [] })
+  const [states, plans] = await Promise.all([soft(listDocs(a, CFG.collection)), soft(listDocs(a, 'coachplan', ['planAt', 'targets']))])
   const og = new Map(states.map(d => [d.id, d]))
   const pl = new Map(plans.map(d => [d.id, d]))
   return users
@@ -286,6 +287,7 @@ async function coachMembers(a) {
       }
     })
     .sort((x, y) => x.name.localeCompare(y.name, 'tr'))
+    .concat(warnings.length ? [{ _warnings: warnings }] : [])
 }
 
 async function coachMember(a, uid) {
@@ -594,8 +596,11 @@ export async function firebaseApi(path, init = {}) {
       if (!r.ok) throw err(r.status, d?.error?.message || 'read failed')
       return { payload: d?.fields?.payload?.stringValue || null }
     }
-    case 'GET /api/coach/members':
-      return { members: await coachMembers(await asCoach()) }
+    case 'GET /api/coach/members': {
+      const all = await coachMembers(await asCoach())
+      const w = all.find(x => x._warnings)
+      return { members: all.filter(x => !x._warnings), warnings: w ? w._warnings : [] }
+    }
     case 'GET /api/coach/member': {
       const uid = new URLSearchParams(path.split('?')[1] || '').get('uid')
       if (!uid) throw err(400, 'uid required')

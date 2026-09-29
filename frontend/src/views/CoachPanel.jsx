@@ -35,9 +35,11 @@ export function CoachPanel() {
   const nav = useNavigate()
   const [members, setMembers] = useState(null)
   const [error, setError] = useState(null)
+  const [warnings, setWarnings] = useState([])
   const load = () => {
     setError(null)
-    api('/api/coach/members').then(r => setMembers(r.members)).catch(e => setError(e.message || 'Liste yüklenemedi'))
+    api('/api/coach/members').then(r => { setMembers(r.members); setWarnings(r.warnings || []) })
+      .catch(e => setError((e.data?.error || e.message || 'Liste yüklenemedi')))
   }
   useEffect(load, [])
 
@@ -51,6 +53,7 @@ export function CoachPanel() {
       <button className="iconbtn" onClick={load} aria-label="Yenile"><Icon name="reset" /></button>
     </div>
     {error && <div className="card small" style={{ color: 'var(--red)' }}>{error}</div>}
+    {warnings.map((w, i) => <div key={i} className="card small" style={{ color: 'var(--orange)' }}>{w} — bu bilgiler listede eksik görünür. Firestore kurallarını kontrol et.</div>)}
     {members && <div className="list">
       {members.map(m => <div key={m.uid} className="item" {...tappable(() => nav('/panel/' + m.uid))}>
         <span className="lrow-i" style={{ background: m.joined ? 'var(--acc)' : 'var(--surface-3)', color: m.joined ? 'var(--on-acc)' : undefined }}>

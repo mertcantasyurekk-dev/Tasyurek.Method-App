@@ -22,6 +22,12 @@ function fakeFirebase() {
       if (!rt.startsWith('ref-')) return res(400, { error: { message: 'INVALID_REFRESH_TOKEN' } })
       return res(200, { id_token: 'tok2', refresh_token: rt, expires_in: '3600' })
     }
+    if (u.pathname.endsWith('/documents:runQuery')) {
+      const q = JSON.parse(init.body).structuredQuery
+      const coll = q.from[0].collectionId
+      return res(200, [...docs.entries()].filter(([k]) => k.startsWith(coll + '/') && !k.slice(coll.length + 1).includes('/'))
+        .map(([k, d]) => ({ document: { name: 'projects/p/databases/default/documents/' + k, fields: d.fields, updateTime: d.updateTime } })).concat([{ readTime: 'x' }]))
+    }
     const path = decodeURIComponent(u.pathname.split('/documents/')[1])
     const cur = docs.get(path)
     if ((init.method || 'GET') === 'GET' && !path.includes('/')) {
@@ -467,5 +473,29 @@ describe('coach notes, reviews, tracker extras', () => {
     expect(x.reports[0]).toMatchObject({ week: '2026-09-20', text: 'eski rapor' })
     expect(x.reviews[0]).toMatchObject({ text: 'eski değerlendirme', sentAt: '2026-09-21T10:00:00Z' })
     expect(fb.calls.filter(c => c.url.includes('/userdata/')).every(c => !c.init.method || c.init.method === 'GET')).toBe(true)
+  })
+})
+
+describe('member list when a rule is missing', () => {
+  it('opens anyway and names the collection it could not read', async () => {
+    fb.docs.set('userdata/U1', { fields: { displayName: { stringValue: 'Seda' }, email: { stringValue: 'uye@x.com' } }, updateTime: 'x' })
+    const base = fb.fetch
+    _setTestHooks({ fetch: async (url, init) => {
+      if (url.endsWith(':runQuery') && JSON.parse(init.body).structuredQuery.from[0].collectionId === 'coachplan') return { ok: false, status: 403, json: async () => [{ error: { message: 'Missing or insufficient permissions.' } }] }
+      return base(url, init)
+    } })
+    await post('/api/login/password', { name: 'mertcan.tasyurekk@gmail.com', password: 'a' })
+    const r = await firebaseApi('/api/coach/members')
+    expect(r.members.map(m => m.name)).toEqual(['Seda'])
+    expect(r.warnings).toEqual(['coachplan listelenemedi: Missing or insufficient permissions.'])
+  })
+  it('the members themselves not readable: a clear error', async () => {
+    const base = fb.fetch
+    _setTestHooks({ fetch: async (url, init) => {
+      if (url.endsWith(':runQuery') && JSON.parse(init.body).structuredQuery.from[0].collectionId === 'userdata') return { ok: false, status: 403, json: async () => [{ error: { message: 'Missing or insufficient permissions.' } }] }
+      return base(url, init)
+    } })
+    await post('/api/login/password', { name: 'mertcan.tasyurekk@gmail.com', password: 'a' })
+    await expect(firebaseApi('/api/coach/members')).rejects.toMatchObject({ status: 403, message: 'userdata listelenemedi: Missing or insufficient permissions.' })
   })
 })
