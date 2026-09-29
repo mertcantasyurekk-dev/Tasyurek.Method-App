@@ -1,5 +1,5 @@
 // Taşyürek Method: the Home nutrition card — today's kcal and macros against the coach's targets,
-// water, and the way into the day's log. Days can be stepped back so a missed evening is filled in
+// water, and the way to put the day's numbers in. Only the day's totals are kept (lib/nutrition.js). Days can be stepped back so a missed evening is filled in
 // the next morning. Data model and sums: lib/nutrition.js.
 import { useState } from 'react'
 import { useStore } from '../store/useStore.js'
@@ -7,9 +7,9 @@ import { useUI } from '../store/useUI.js'
 import { todayISO, isoOf, fmtDate, fmtNum } from '../lib/format.js'
 import { useCoached } from '../lib/coached.js'
 import { cleanTargets } from '../lib/firebase-api.js'
-import { dayOf, totalsOf, targetsOf, macroTargetFor, kcalOf, addItem, removeItem, setWater, setSleep, setDayType } from '../lib/nutrition.js'
+import { dayOf, totalsOf, targetsOf, macroTargetFor, kcalOf, addToDay, setTotals, setWater, setSleep, setDayType } from '../lib/nutrition.js'
 import Icon from './Icon.jsx'
-import { Button, NumberField, TextField, Section, Row, Segmented } from './ui.jsx'
+import { Button, NumberField, Section, Row, Segmented } from './ui.jsx'
 import './nutrition.css'
 
 const ui = () => useUI.getState()
@@ -119,7 +119,7 @@ export default function NutritionCard() {
 
     <div className="nut-act">
       <Button size="sm" variant="tinted" icon="plus" onClick={() => addMacroSheet(iso)}>Makro ekle</Button>
-      <Button size="sm" icon="list" onClick={() => dayLogSheet(iso)}>Günün kaydı</Button>
+      <Button size="sm" icon="pencil" onClick={() => dayEditSheet(iso)}>Günü düzenle</Button>
     </div>
     {!T && (coached
       ? <div className="nut-note">Koçun henüz beslenme hedefini belirlemedi. Girdiklerin yine de kaydedilir.</div>
@@ -129,29 +129,33 @@ export default function NutritionCard() {
 
 /* ------------------------------------------------------------------ sheets ---------------------- */
 
+function MacroFields({ v, set, placeholder = '0' }) {
+  return <Section>
+    {MACROS.map(([k, label]) => <Row key={k} title={label}>
+      <NumberField nullable value={v[k]} onChange={x => set(o => ({ ...o, [k]: x }))} placeholder={placeholder} className="nut-num" aria-label={label + ' (g)'} />
+      <span className="small dim" style={{ marginInlineStart: 6 }}>g</span>
+    </Row>)}
+  </Section>
+}
+
+// After a meal: its grams go onto the day's totals. Nothing about the meal itself is kept.
 function AddMacro({ iso, close }) {
+  const S = useStore(s => s.S)
   const update = useStore(s => s.update)
-  const [name, setName] = useState('')
   const [v, setV] = useState({ p: null, c: null, f: null })
   const kcal = kcalOf({ p: v.p || 0, c: v.c || 0, f: v.f || 0 })
+  const now = totalsOf(dayOf(S, iso))
   const save = () => {
-    let added = null
-    update(s => { added = addItem(s, iso, { name, ...v }) })
-    if (!added) { toast('En az bir makro gir'); return }
+    let ok = false
+    update(s => { ok = addToDay(s, iso, v) })
+    if (!ok) { toast('En az bir makro gir'); return }
     close(); toast(`${fmtNum(kcal)} kcal eklendi`)
   }
   return <>
     <h3>Makro ekle · {dayLabel(iso)}</h3>
-    <div className="muted small" style={{ marginBottom: 12 }}>Yediğinin protein, karbonhidrat ve yağ gramlarını gir. Kalori otomatik hesaplanır.</div>
-    <TextField placeholder="Ne yedin? (isteğe bağlı)" value={name} onChange={e => setName(e.target.value)} maxLength={80} />
-    <div style={{ height: 10 }} />
-    <Section>
-      {MACROS.map(([k, label]) => <Row key={k} title={label}>
-        <NumberField nullable value={v[k]} onChange={x => setV(o => ({ ...o, [k]: x }))} placeholder="0" className="nut-num" aria-label={label + ' (g)'} />
-        <span className="small dim" style={{ marginInlineStart: 6 }}>g</span>
-      </Row>)}
-    </Section>
-    <div className="row between" style={{ margin: '4px 2px 14px' }}><span className="muted">Toplam</span><b>{fmtNum(kcal)} kcal</b></div>
+    <div className="muted small" style={{ marginBottom: 12 }}>Yediğinin gramlarını gir, günün toplamına eklenir. Şu an: {fmtNum(now.kcal)} kcal · P {fmtNum(now.p)} · K {fmtNum(now.c)} · Y {fmtNum(now.f)}</div>
+    <MacroFields v={v} set={setV} />
+    <div className="row between" style={{ margin: '4px 2px 14px' }}><span className="muted">Eklenecek</span><b>{fmtNum(kcal)} kcal</b></div>
     <Button variant="primary" icon="plus" onClick={save}>Ekle</Button>
     <div style={{ height: 8 }} />
     <Button variant="ghost" className="dim" onClick={close}>Vazgeç</Button>
@@ -159,38 +163,37 @@ function AddMacro({ iso, close }) {
 }
 export const addMacroSheet = iso => ui().openSheet(close => <AddMacro iso={iso} close={close} />)
 
-function DayLog({ iso, close }) {
+// The day as a whole: its totals set outright, sleep, and the day type.
+function DayEdit({ iso, close }) {
   const S = useStore(s => s.S)
   const update = useStore(s => s.update)
   const day = dayOf(S, iso)
-  const items = day?.items || []
-  const totals = totalsOf(day)
+  const cur = totalsOf(day)
   const target = macroTargetFor(S, iso)
   const T = targetsOf(S)
+  const [v, setV] = useState({ p: cur.p || null, c: cur.c || null, f: cur.f || null })
+  const kcal = kcalOf({ p: v.p || 0, c: v.c || 0, f: v.f || 0 })
+  const save = () => { update(s => setTotals(s, iso, { p: v.p || 0, c: v.c || 0, f: v.f || 0 })); close(); toast('Gün güncellendi') }
   return <>
-    <h3>{dayLabel(iso)} · günün kaydı</h3>
-    <div className="muted small" style={{ marginBottom: 12 }}>{fmtNum(totals.kcal)} kcal · P {fmtNum(totals.p)} g · K {fmtNum(totals.c)} g · Y {fmtNum(totals.f)} g</div>
-    {target?.type && <><Segmented value={target.type} onChange={v => update(s => setDayType(s, iso, v))}
+    <h3>{dayLabel(iso)} · günün toplamı</h3>
+    <div className="muted small" style={{ marginBottom: 12 }}>Gün sonundaki toplam makroların. Yanlış girdiysen buradan düzelt.</div>
+    {target?.type && <><Segmented value={target.type} onChange={x => update(s => setDayType(s, iso, x))}
       options={[{ value: 'training', label: 'Antrenman günü' }, { value: 'rest', label: 'Dinlenme günü' }]} /><div style={{ height: 12 }} /></>}
-    <Section title="Yediklerin">
-      {items.length ? items.map(it => <Row key={it.id} icon="fork" title={it.name || 'Hızlı ekleme'}
-        subtitle={`${fmtNum(kcalOf(it))} kcal · P ${fmtNum(it.p)} · K ${fmtNum(it.c)} · Y ${fmtNum(it.f)}`}>
-        <button className="iconbtn" aria-label="Sil" onClick={() => update(s => removeItem(s, iso, it.id))}><Icon name="trash" /></button>
-      </Row>) : <Row title="Henüz bir şey eklemedin" />}
-    </Section>
+    <MacroFields v={v} set={setV} />
+    <div className="row between" style={{ margin: '4px 2px 14px' }}><span className="muted">Toplam</span><b>{fmtNum(kcal)} kcal{target ? ` / ${fmtNum(target.kcal)}` : ''}</b></div>
     <Section title="Uyku">
       <Row icon="moon" title="Uyku" subtitle={T?.sleep ? `Hedef ${fmtNum(T.sleep)} saat` : undefined}>
-        <button className="iconbtn" aria-label="Azalt" onClick={() => update(s => setSleep(s, iso, (day?.sleep || 0) - 0.5))}><Icon name="minus" /></button>
+        <button className="iconbtn" aria-label="Uyku azalt" onClick={() => update(s => setSleep(s, iso, (day?.sleep || 0) - 0.5))}><Icon name="minus" /></button>
         <b style={{ minWidth: 56, textAlign: 'center' }}>{day?.sleep ? fmtNum(day.sleep) + ' sa' : '—'}</b>
-        <button className="iconbtn" aria-label="Artır" onClick={() => update(s => setSleep(s, iso, (day?.sleep || (T?.sleep ? T.sleep - 0.5 : 7)) + 0.5))}><Icon name="plus" /></button>
+        <button className="iconbtn" aria-label="Uyku artır" onClick={() => update(s => setSleep(s, iso, (day?.sleep || (T?.sleep ? T.sleep - 0.5 : 7)) + 0.5))}><Icon name="plus" /></button>
       </Row>
     </Section>
-    <Button variant="primary" icon="plus" onClick={() => { close(); addMacroSheet(iso) }}>Makro ekle</Button>
+    <Button variant="primary" icon="checkCircle" onClick={save}>Kaydet</Button>
     <div style={{ height: 8 }} />
-    <Button variant="ghost" className="dim" onClick={close}>Kapat</Button>
+    <Button variant="ghost" className="dim" onClick={close}>Vazgeç</Button>
   </>
 }
-export const dayLogSheet = iso => ui().openSheet(close => <DayLog iso={iso} close={close} />)
+export const dayEditSheet = iso => ui().openSheet(close => <DayEdit iso={iso} close={close} />)
 
 /* ------------------------------------------------------------------ targets form ---------------- */
 // Shared by the coach panel (a member's targets) and the coach's own card (S.myTargets).

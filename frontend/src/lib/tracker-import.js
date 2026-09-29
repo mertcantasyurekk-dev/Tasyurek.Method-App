@@ -7,7 +7,7 @@
 //                                       already has a workout here is skipped, so importing twice
 //                                       never duplicates anything)
 //   - daily weights                   → body weight, through mergeImport as well
-//   - daily macros, water and sleep    → S.nutrition (one item per day, id 'tt-<date>')
+//   - daily macros, water and sleep    → S.nutrition day totals, where the app has none yet
 // Cardio and measurements stay in the tracker for now.
 //
 // Exercise names: only a name that IS a library name (the tracker's Program Editor adds exercises
@@ -18,6 +18,7 @@
 import { CATALOGUE } from './exercises.js'
 import { bpFromName, mergeImport } from './import-csv.js'
 import { uid } from './format.js'
+import { totalsOf } from './nutrition.js'
 
 const clean = s => String(s ?? '').toLowerCase().replace(/\s+/g, ' ').trim()
 let byName = null
@@ -159,10 +160,10 @@ export function applyTrackerImport(S, conv, { now = new Date().toISOString() } =
   let days = 0
   S.nutrition = S.nutrition && typeof S.nutrition === 'object' ? S.nutrition : {}
   for (const n of conv.nutrition || []) {
-    const day = S.nutrition[n.d] || { items: [] }
-    day.items = Array.isArray(day.items) ? day.items : []
+    const day = S.nutrition[n.d] && typeof S.nutrition[n.d] === 'object' ? S.nutrition[n.d] : {}
     let touched = false
-    if (n.item && !day.items.some(i => i.id === n.item.id) && !(day.del || []).includes(n.item.id)) { day.items.push({ ...n.item }); touched = true }
+    // The tracker's totals go in only where this app has none of its own for the day.
+    if (n.item && totalsOf(day).kcal === 0) { day.p = n.item.p; day.c = n.item.c; day.f = n.item.f; delete day.items; delete day.del; touched = true }
     if (n.water && !day.water) { day.water = n.water; touched = true }
     if (n.sleep && !day.sleep) { day.sleep = n.sleep; touched = true }
     if (touched) { day._ts = Date.now(); S.nutrition[n.d] = day; days++ }

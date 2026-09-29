@@ -244,7 +244,7 @@ const setLine = s => (s ? `P ${fmtNum(s.p)} · K ${fmtNum(s.c)} · Y ${fmtNum(s.
 export function weekAverage(st, today = todayISO()) {
   const from = new Date(today + 'T12:00:00'); from.setDate(from.getDate() - 6)
   const fromIso = from.toISOString().slice(0, 10)
-  const days = Object.entries(st?.nutrition || {}).filter(([d, v]) => d >= fromIso && d <= today && (v?.items || []).length)
+  const days = Object.entries(st?.nutrition || {}).filter(([d, v]) => d >= fromIso && d <= today && totalsOf(v).kcal > 0)
   if (!days.length) return null
   const sum = days.reduce((a, [, v]) => { const t = totalsOf(v); return { p: a.p + t.p, c: a.c + t.c, f: a.f + t.f, water: a.water + (v.water || 0) } }, { p: 0, c: 0, f: 0, water: 0 })
   const k = days.length

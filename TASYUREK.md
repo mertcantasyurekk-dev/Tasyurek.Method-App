@@ -57,11 +57,13 @@ Admin hesabında Ana sayfa ve Ayarlar'da **Koç paneli** (`views/CoachPanel.jsx`
 
 Ana sayfadaki kart (`components/NutritionCard.jsx`, stiller `components/nutrition.css`, model `lib/nutrition.js`):
 kcal halkası (makro payları renkli), protein/karbonhidrat/yağ çubukları hedefe göre "kaldı / fazla / hedefte",
-su (çeyrek litre adımlarla), gün geçişi (geriye dönük giriş), "Makro ekle" ve "Günün kaydı" (kalemler, silme, uyku,
-gün tipi). Kcal = P×4 + K×4 + Y×9.
-- Veri: `S.nutrition[tarih] = { items: [{id, name, p, c, f, t}], del, water, sleep, type, _ts }`. Kilo openGym'in
-  `bodyweight` kaydında kalır. Senkronda kalem bazlı birleşir (`mergeNutrition`, `sync-merge.js`'e tek satırla
-  bağlı): iki cihazda eklenenlerin hepsi kalır, silinen geri gelmez.
+su (çeyrek litre adımlarla), gün geçişi (geriye dönük giriş), "Makro ekle" (gramlar günün toplamına eklenir) ve
+"Günü düzenle" (toplamı doğrudan düzeltme, uyku, gün tipi). Kcal = P×4 + K×4 + Y×9.
+- **Sadece günün toplamı tutulur**, öğün öğün ne yendiği tutulmaz (koçun kararı: önemli olan günlük kcal ve makro
+  dağılımı). Veri: `S.nutrition[tarih] = { p, c, f, water, sleep, type, _ts }`, günde ~60 bayt, yılda ~25 KB.
+  Kilo openGym'in `bodyweight` kaydında kalır. Senkronda gün bazında son düzenlenen kopya kazanır
+  (`mergeNutrition`, `sync-merge.js`'e tek satırla bağlı). Eski kalemli günler (`items`) toplam olarak okunur ve
+  ilk düzenlemede toplama çevrilir.
 - Hedefler: koç panelinde üye detayı → **Beslenme** → antrenman ve dinlenme günü makro setleri, su, uyku.
   `coachplan/{uid}.targets` alanına yazılır (programla birbirini ezmez); üyede `S.coachTargets`, değiştiremez.
   Hedef yoksa form eski tracker'ın `customMacroTargets`/`targets` değerleriyle dolu açılır. Sınırlar: P ≤ 500,
@@ -69,7 +71,7 @@ gün tipi). Kcal = P×4 + K×4 + Y×9.
 - Gün tipi otomatik (planlı rutin ya da kayıtlı antrenman → antrenman günü); üye elle çevirebilir.
 - Koç kendi hedeflerini kartın altındaki "Kendi hedeflerini belirle"den koyar (`S.myTargets`).
 - Koç panelinde son 7 günün ortalaması (kayıt olan günler) görünür.
-- Tracker'dan aktarma günlük makro/su/uyku değerlerini de getirir (`tt-<tarih>` kalemi, tekrar aktarımda çoğalmaz).
+- Tracker'dan aktarma günlük makro/su/uyku değerlerini de getirir (sadece uygulamada o gün için değer yoksa; tekrar aktarımda çoğalmaz).
 
 ## Eski Tracker'dan aktarma
 

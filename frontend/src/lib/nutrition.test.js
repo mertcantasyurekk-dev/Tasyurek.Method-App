@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { kcalOf, totalsOf, macroTargetFor, dayTypeOf, addItem, removeItem, setWater, setSleep, setDayType, mergeNutrition } from './nutrition.js'
+import { kcalOf, totalsOf, loggedDay, macroTargetFor, dayTypeOf, addToDay, setTotals, setWater, setSleep, setDayType, mergeNutrition } from './nutrition.js'
 import { mergeStates } from './sync-merge.js'
 
 const T = { training: { p: 180, c: 250, f: 60 }, rest: { p: 180, c: 150, f: 70 }, water: 3, sleep: 8 }
@@ -11,9 +11,12 @@ describe('totals and targets', () => {
     expect(kcalOf({ p: 180, c: 250, f: 60 })).toBe(2260)
     expect(kcalOf({})).toBe(0)
   })
-  it('sums items, tolerating commas and junk', () => {
+  it('reads day totals, and an old per-item day as its sum', () => {
+    expect(totalsOf({ p: 150, c: '200,5', f: 60 })).toEqual({ p: 150, c: 200.5, f: 60, kcal: 1942 })
     expect(totalsOf({ items: [{ p: 30, c: '12,5', f: 5 }, { p: 'x', c: 40, f: -3 }] })).toEqual({ p: 30, c: 52.5, f: 5, kcal: 375 })
     expect(totalsOf(null)).toEqual({ p: 0, c: 0, f: 0, kcal: 0 })
+    expect(loggedDay({ water: 1 })).toBe(true)
+    expect(loggedDay({})).toBe(false)
   })
   it('picks the training set on a planned day, rest otherwise; the member can flip it', () => {
     const S = base()
@@ -38,38 +41,43 @@ describe('totals and targets', () => {
 })
 
 describe('edits', () => {
-  it('adds, removes, and clamps water and sleep', () => {
+  it('adds meals onto the day, sets the total outright, keeps no items', () => {
     const S = base()
-    expect(addItem(S, MON, { p: 0, c: '', f: 0 })).toBeNull()
-    const a = addItem(S, MON, { name: ' Tavuk ', p: '40', c: 0, f: '4,2' }, 10)
-    addItem(S, MON, { p: 20, c: 60, f: 10 }, 11)
-    expect(a).toMatchObject({ name: 'Tavuk', p: 40, f: 4.2 })
-    expect(totalsOf(S.nutrition[MON])).toMatchObject({ p: 60, c: 60, f: 14.2 })
-    removeItem(S, MON, a.id, 12)
-    expect(S.nutrition[MON].items).toHaveLength(1)
-    expect(S.nutrition[MON].del).toEqual([a.id])
+    expect(addToDay(S, MON, { p: 0, c: '', f: 0 })).toBe(false)
+    expect(S.nutrition[MON]).toBeUndefined()
+    addToDay(S, MON, { p: '40', c: 0, f: '4,2' }, 10)
+    addToDay(S, MON, { p: 20, c: 60, f: 10 }, 11)
+    expect(S.nutrition[MON]).toEqual({ p: 60, c: 60, f: 14.2, _ts: 11 })
+    setTotals(S, MON, { p: 150, c: 220, f: 55 }, 12)
+    expect(totalsOf(S.nutrition[MON]).kcal).toBe(1975)
     setWater(S, MON, 2.3); expect(S.nutrition[MON].water).toBe(2.25)
     setWater(S, MON, -1); expect(S.nutrition[MON].water).toBe(0)
     setSleep(S, MON, '7,4'); expect(S.nutrition[MON].sleep).toBe(7.5)
+    expect(JSON.stringify(S.nutrition[MON]).length).toBeLessThan(80)   // a day stays a handful of numbers
+  })
+  it('an old per-item day becomes totals on first edit, nothing lost', () => {
+    const S = base()
+    S.nutrition[MON] = { items: [{ id: 'a', p: 30, c: 50, f: 10 }, { id: 'b', p: 20, c: 0, f: 5 }], del: ['x'], water: 1, _ts: 1 }
+    addToDay(S, MON, { p: 10 }, 5)
+    expect(S.nutrition[MON]).toEqual({ p: 60, c: 50, f: 15, water: 1, _ts: 5 })
   })
 })
 
 describe('sync', () => {
-  it('keeps what both phones added, drops what either deleted, newer day wins for water', () => {
-    const phone = { [MON]: { items: [{ id: 'a', p: 10, t: 1 }, { id: 'b', p: 20, t: 2 }], water: 1, _ts: 5 } }
-    const laptop = { [MON]: { items: [{ id: 'a', p: 10, t: 1 }, { id: 'c', p: 30, t: 3 }], del: ['b'], water: 2.5, _ts: 9 }, [TUE]: { items: [{ id: 'd', p: 5 }], _ts: 1 } }
+  it('per day, the copy edited last wins; days only one side has are kept', () => {
+    const phone = { [MON]: { p: 100, c: 100, f: 30, water: 1, _ts: 5 } }
+    const laptop = { [MON]: { p: 120, c: 150, f: 40, water: 2.5, _ts: 9 }, [TUE]: { p: 5, _ts: 1 } }
     const m = mergeNutrition(phone, laptop)
-    expect(m[MON].items.map(i => i.id)).toEqual(['a', 'c'])
-    expect(m[MON].water).toBe(2.5)
-    expect(m[MON].del).toEqual(['b'])
-    expect(m[MON]._ts).toBe(9)
-    expect(m[TUE].items).toHaveLength(1)
+    expect(m[MON]).toEqual(laptop[MON])
+    expect(m[TUE]).toEqual({ p: 5, _ts: 1 })
+    expect(mergeNutrition(laptop, phone)[MON]).toEqual(laptop[MON])
     expect(mergeNutrition(null, undefined)).toEqual({})
   })
   it('runs inside openGym\'s own state merge', () => {
-    const a = { _ts: 1, workouts: [], routines: [], bodyweight: [], nutrition: { [MON]: { items: [{ id: 'x', p: 1 }], _ts: 1 } } }
-    const b = { _ts: 2, workouts: [], routines: [], bodyweight: [], nutrition: { [MON]: { items: [{ id: 'y', p: 2 }], _ts: 2 } } }
+    const a = { _ts: 1, workouts: [], routines: [], bodyweight: [], nutrition: { [MON]: { p: 1, _ts: 1 }, [TUE]: { p: 7, _ts: 1 } } }
+    const b = { _ts: 2, workouts: [], routines: [], bodyweight: [], nutrition: { [MON]: { p: 2, _ts: 2 } } }
     const out = mergeStates(a, b)
-    expect(out.nutrition[MON].items.map(i => i.id).sort()).toEqual(['x', 'y'])
+    expect(out.nutrition[MON].p).toBe(2)
+    expect(out.nutrition[TUE].p).toBe(7)
   })
 })

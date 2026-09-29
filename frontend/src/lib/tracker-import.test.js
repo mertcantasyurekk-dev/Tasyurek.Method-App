@@ -172,15 +172,14 @@ describe('nutrition from the tracker', () => {
     expect(conv.nutrition[0].item).toMatchObject({ id: 'tt-2026-09-01', p: 150, c: 200.5, f: 60 })
     expect(conv.nutrition[1].item).toBeNull()
     const S = clone(DEF)
-    S.nutrition = { '2026-09-02': { items: [{ id: 'mine', p: 30 }], water: 1, _ts: 1 } }
+    S.nutrition = { '2026-09-02': { p: 30, c: 0, f: 0, water: 1, _ts: 1 } }
     const r = applyTrackerImport(S, conv, { now: 'T' })
     expect(r.days).toBe(1)                                          // 09-02 already had its own water
-    expect(S.nutrition['2026-09-01']).toMatchObject({ water: 2.5, sleep: 7 })
-    expect(S.nutrition['2026-09-01'].items).toHaveLength(1)
-    expect(S.nutrition['2026-09-02'].water).toBe(1)                 // the app's own value stays
-    expect(S.nutrition['2026-09-02'].items.map(i => i.id)).toEqual(['mine'])
+    expect(S.nutrition['2026-09-01']).toMatchObject({ p: 150, c: 200.5, f: 60, water: 2.5, sleep: 7 })
+    expect(S.nutrition['2026-09-01'].items).toBeUndefined()
+    expect(S.nutrition['2026-09-02']).toMatchObject({ p: 30, water: 1 })   // the app's own values stay
     const again = applyTrackerImport(S, convertTracker(payload), { now: 'T2' })
     expect(again.days).toBe(0)
-    expect(S.nutrition['2026-09-01'].items).toHaveLength(1)
+    expect(S.nutrition['2026-09-01'].p).toBe(150)
   })
 })
