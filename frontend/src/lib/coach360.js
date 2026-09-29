@@ -6,11 +6,12 @@
 //
 // Periods are fixed calendar weeks: [N] = the Monday→Sunday week that ended on the last Sunday
 // (today, if today is Sunday), [N-1] the week before it. The same week comes out whatever day
-// the coach looks.
+// the coach looks. Measurements: the first ever for [BAŞLANGIÇ], the last within each week for [N-1]/[N].
 import { EXIDX } from './exercises.js'
 import { isWarmupRow } from './workout-model.js'
 import { totalsOf, kcalOf } from './nutrition-core.js'
 import { macroTargetFor } from './nutrition.js'
+import { entriesOf as measurementsOf, measureLine, lastInPeriod } from './measurements.js'
 
 const num = v => { if (v === null || v === undefined || v === '') return NaN; const n = parseFloat(String(v).replace(',', '.')); return isNaN(n) ? NaN : n }
 const fmt = (n, d = 1) => (n === null || n === undefined || isNaN(n) ? '—' : String(Math.round(n * 10 ** d) / 10 ** d))
@@ -165,7 +166,8 @@ export function buildExport({ uid, name, email, S, note = '', goal = '', today =
   L.push('[BAŞLANGIÇ] ilk kayıt: ' + (firstRecord || '—'))
   if (firstRecord && firstRecord >= N1[0]) L.push('⚠ İlk kayıt N-1 haftasında veya sonrasında: başlangıç ile N-1 aynı/çok yakın dönem, uzun vadeli kıyas henüz anlamsız.')
   L.push('kilo: ' + baseWeight)
-  L.push('ölçüler: —')
+  const meas = measurementsOf(S)
+  L.push('ölçüler: ' + (meas.length ? `${measureLine(meas[0])} (${meas[0].d})` : '—'))
   L.push('top setler (hareketin ilk kayıtlı seansı):')
   const baseLines = keys.filter(k => baseMap[k]).map(k => (baseMap[k].bestDate >= N1[0]
     ? `  ${baseMap[k].name}: yeni hareket (ilk seans ${baseMap[k].bestDate}) — başlangıç kıyası yok`
@@ -177,7 +179,8 @@ export function buildExport({ uid, name, email, S, note = '', goal = '', today =
     L.push(`[${tag}] ${dates[0]} → ${dates[6]}${dates[6] === today ? ' (bugün dahil)' : ''}`)
     L.push(`log günü: ${st.logged}/7`)
     L.push('kilo ort: ' + (st.w.length ? `${fmt(avg(st.w), 1)} kg (${st.w.length} ölçüm)` : '—'))
-    L.push('ölçüler: —')
+    const pm = lastInPeriod(S, dates)
+    L.push('ölçüler: ' + (pm ? `${measureLine(pm)} (${pm.d})` : '—'))
     L.push(`uyku ort: ${st.sleep.length ? fmt(avg(st.sleep), 1) + ' sa' : '—'} | su ort: ${st.water.length ? fmt(avg(st.water), 1) + ' L' : '—'}`)
     if (st.macroDays) {
       const p = st.pS / st.macroDays, c = st.cS / st.macroDays, f = st.fS / st.macroDays

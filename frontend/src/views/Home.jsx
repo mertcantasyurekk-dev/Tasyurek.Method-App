@@ -9,6 +9,7 @@ import { FIREBASE } from '../lib/firebase-api.js'
 import NutritionCard from '../components/NutritionCard.jsx'
 import CoachMessageCard from '../components/CoachMessages.jsx'
 import { maybeAutoBackup } from '../components/Backup.jsx'
+import MeasurementsCard from '../components/MeasurementsCard.jsx'
 import { bwSheet, goalSheet, dayOverrideSheet, calendarSheet, startFlow, starterPlanSheet, bwDeltaColor, weighInsSheet } from '../sheets.jsx'
 import LineChart from '../components/LineChart.jsx'
 import Icon from '../components/Icon.jsx'
@@ -204,6 +205,9 @@ export default function Home() {
         ? t('No entries yet — log your weight to start the curve.')
         : t("No entries yet — log your weight to start the curve. It's also asked before every workout.")}</div>}
     </div>}
+
+    {/* Taşyürek: weekly tape measurements, and how they moved. */}
+    {FIREBASE && <MeasurementsCard />}
 
     <div className="card tappable" style={{ cursor: 'pointer' }} {...tappable(() => calendarSheet())}>
       <div className="row between">

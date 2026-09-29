@@ -71,6 +71,19 @@ Koç panelinde üye detayı (`views/CoachWeekly.jsx`, biçimler `lib/coach360.js
 - **Tracker'dan aktar** (bir kez, taraf boşken): eski `coachNote`, `coachGoal`, `coachReports`,
   `weeklyRevisions` (orijinal tarihleriyle) gelir; `userdata`'ya yazılmaz.
 
+## Vücut ölçüleri
+
+`lib/measurements.js`, Ana sayfa kartı `components/MeasurementsCard.jsx`. Tracker'ın 10 alanı ve anahtarları: omuz
+(`shoulder`), göğüs (`chest`), sol/sağ kol (`armL`/`armR`), bel üst/göbek/alt (`waistUpper`/`waistNavel`/`waistLower`),
+kalça (`hips`), sol/sağ bacak (`legL`/`legR`), cm. `S.measurements = [{ d, …alanlar, t }]`, günde bir kayıt, kısmi olabilir,
+silinen gün `{ d, del: true, t }` olarak kalır. Senkron: gün bazında son yazılan (`mergeMeasurements`, `sync-merge.js`).
+- Üye: kartta her ölçü + değişim ("önceki ölçüme göre" / "başlangıca göre", renk yok: yorum koçun), "Ölç" (alan başına
+  ölçüm tarifi, son değerler silik ipucu, geçmiş tarih seçilebilir), "Geçmiş" (ölçü başına grafik, günler, silme).
+  7 gün dolunca kart "Haftalık ölçüm zamanı" der. Değişim her alan için kendi önceki/ilk ölçümüne göredir.
+- Koç: üye detayında tablo (başlangıç / şimdi / toplam / son), Özet'te son ölçüm tarihi.
+- 360°: `ölçüler:` satırı tracker biçiminde — [BAŞLANGIÇ] ilk ölçüm, [N-1]/[N] o haftadaki son ölçüm.
+- Tracker'dan aktarma ölçüleri de getirir (uygulamada o gün kaydı yoksa).
+
 ## Tracker programlarının aktarımı
 
 Koç panelinde **Tracker programlarını aktar** (hepsi birden) ya da üye detayında **Tracker programını ata**

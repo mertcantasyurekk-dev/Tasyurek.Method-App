@@ -8,7 +8,8 @@
 //                                       never duplicates anything)
 //   - daily weights                   → body weight, through mergeImport as well
 //   - daily macros, water and sleep    → S.nutrition day totals, where the app has none yet
-// Cardio and measurements stay in the tracker for now.
+//   - body measurements               → S.measurements (days this app has none for)
+// Cardio stays in the tracker for now.
 //
 // Exercise names: only a name that IS a library name (the tracker's Program Editor adds exercises
 // from the same 1324-exercise dataset) is linked to the library. Anything else becomes a custom
@@ -19,6 +20,7 @@ import { CATALOGUE } from './exercises.js'
 import { bpFromName, mergeImport } from './import-csv.js'
 import { uid } from './format.js'
 import { totalsOf } from './nutrition.js'
+import { fromTracker as measurementsFromTracker } from './measurements.js'
 
 const clean = s => String(s ?? '').toLowerCase().replace(/\s+/g, ' ').trim()
 let byName = null
@@ -139,7 +141,8 @@ export function convertTracker(payload, existingCustom = [], { stableIds = false
   const used = new Set([...routines.flatMap(r => r.ex.map(e => e.id)), ...workouts.flatMap(w => w.entries.map(e => e.id))])
   const customEx = fresh.filter(c => used.has(c.id))
 
-  return { routines, workouts, bodyweight, nutrition, customEx, linked, programName: program?.name || '' }
+  const measurements = measurementsFromTracker(payload?.measurements)
+  return { routines, workouts, bodyweight, nutrition, measurements, customEx, linked, programName: program?.name || '' }
 }
 
 /**
@@ -172,8 +175,17 @@ export function applyTrackerImport(S, conv, { now = new Date().toISOString() } =
     if (n.sleep && !day.sleep) { day.sleep = n.sleep; touched = true }
     if (touched) { day._ts = Date.now(); S.nutrition[n.d] = day; days++ }
   }
+  // Body measurements: days this app has none for (never over one entered or removed here).
+  let meas = 0
+  const have = new Set((Array.isArray(S.measurements) ? S.measurements : []).map(m => m?.d))
+  for (const m of conv.measurements || []) {
+    if (have.has(m.d)) continue
+    S.measurements = [...(S.measurements || []), { ...m, t: new Date(m.d + 'T09:00:00').getTime() }]
+    meas++
+  }
+  if (meas) S.measurements.sort((a, b) => (a.d < b.d ? -1 : 1))
   S.trackerImport = { at: now, ...(first ? {} : { firstAt: S.trackerImport.firstAt || S.trackerImport.at }) }
-  return { routines, workouts: w.added, workoutsSkipped: w.skipped, weights: b.added, days, customs: conv.customEx.length }
+  return { routines, workouts: w.added, workoutsSkipped: w.skipped, weights: b.added, days, measurements: meas, customs: conv.customEx.length }
 }
 
 // Days of the week for n routines in order, when the tracker had no weekday for them (openGym keys:

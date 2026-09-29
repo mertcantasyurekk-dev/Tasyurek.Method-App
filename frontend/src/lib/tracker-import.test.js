@@ -202,3 +202,15 @@ describe('the coach\'s transfer of the tracker program', () => {
     expect(defaultWeek(Array.from({ length: 9 }, (_, i) => 'r' + i))[0]).toEqual(['r6'])
   })
 })
+
+describe('measurements from the tracker', () => {
+  it('come over once, never over a day the app has', () => {
+    const payload = { measurements: [{ id: '1', date: '2026-09-07', waistNavel: 86 }, { id: '2', date: '2026-09-14', waistNavel: 85 }] }
+    const S = clone(DEF)
+    S.measurements = [{ d: '2026-09-14', waistNavel: 84, t: 5 }]
+    const r = applyTrackerImport(S, convertTracker(payload), { now: 'T' })
+    expect(r.measurements).toBe(1)
+    expect(S.measurements.map(m => [m.d, m.waistNavel])).toEqual([['2026-09-07', 86], ['2026-09-14', 84]])
+    expect(applyTrackerImport(S, convertTracker(payload), { now: 'T2' }).measurements).toBe(0)
+  })
+})

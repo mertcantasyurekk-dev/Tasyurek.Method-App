@@ -100,3 +100,18 @@ describe('auto draft', () => {
     expect(d).toContain('• Ortalama kilo 84.2 kg')
   })
 })
+
+describe('measurements in the export', () => {
+  it('first ever for the baseline, the last within each week', () => {
+    const S2 = { ...S, measurements: [
+      { d: '2026-09-01', waistNavel: 88, hips: 100, t: 1 },
+      { d: '2026-09-16', waistNavel: 86.5, t: 2 },
+      { d: '2026-09-23', waistNavel: 85.8, hips: 98, t: 3 }
+    ] }
+    const out = buildExport({ uid: 'U1', S: S2, today: TODAY })
+    const base = out.slice(out.indexOf('[BAŞLANGIÇ]'), out.indexOf('[N-1]'))
+    expect(base).toContain('ölçüler: bel-göbek 88 | kalça 100 (2026-09-01)')
+    expect(out.slice(out.indexOf('[N-1]'), out.indexOf('[N] '))).toContain('ölçüler: bel-göbek 86.5 (2026-09-16)')
+    expect(out.slice(out.indexOf('[N] '))).toContain('ölçüler: bel-göbek 85.8 | kalça 98 (2026-09-23)')
+  })
+})

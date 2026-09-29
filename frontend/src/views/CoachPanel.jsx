@@ -19,6 +19,7 @@ import { TargetsForm } from '../components/NutritionCard.jsx'
 import CoachWeekly from './CoachWeekly.jsx'
 import { loadTrackerPlan, oneMemberTransferSheet, everyoneTransferSheet } from '../components/TrackerTransfer.jsx'
 import { backupSheet } from '../components/Backup.jsx'
+import { FIELDS as MEAS_FIELDS, changesOf, latestOf as lastMeasurement, daysSinceLast as measAgo } from '../lib/measurements.js'
 import { totalsOf, kcalOf } from '../lib/nutrition.js'
 
 const toast = m => useUI.getState().toast(m)
@@ -154,6 +155,7 @@ export function CoachMember() {
       <Row icon="flame" title="Son 7 gün" value={`${info.workouts7 || 0} antrenman`} />
       <Row icon="dumbbell" title="Toplam" value={`${workouts.length} antrenman`} />
       <Row icon="scale" title="Son kilo" value={bw[0] ? `${fmtNum(bw[0].w)} ${unit} · ${fmtDate(bw[0].d)}` : '—'} />
+      <Row icon="target" title="Son ölçüm" value={lastMeasurement(st) ? `${fmtDate(lastMeasurement(st).d)} · ${measAgo(st, todayISO())} gün önce` : '—'} />
     </Section>
 
     <CoachWeekly uid={uid} info={info} m={m} onChanged={load} />
@@ -174,6 +176,8 @@ export function CoachMember() {
     </Section>
 
     <NutritionSection uid={uid} name={info.name} m={m} st={st} onSaved={load} />
+
+    <MeasurementsSection st={st} />
 
     <Section title="Son antrenmanlar">
       {workouts.length ? workouts.slice(0, 8).map(w => {
@@ -303,3 +307,30 @@ function TargetsSheet({ uid, name, initial, fromTracker, onSaved, close }) {
   </>
 }
 export const targetsSheet = props => useUI.getState().openSheet(close => <TargetsSheet {...props} close={close} />)
+
+/* ------------------------------------------------------------------ measurements ---------------- */
+
+const cmv = v => fmtNum(Math.round(v * 10) / 10)
+const sgn = v => (v == null ? '—' : (v > 0 ? '+' : v < 0 ? '−' : '±') + cmv(Math.abs(v)))
+
+function MeasurementsSection({ st }) {
+  const ch = changesOf(st)
+  const rows = ch ? MEAS_FIELDS.filter(f => ch[f.key]) : []
+  return <Section title="Vücut ölçüleri" footer={ch ? 'Başlangıç: her ölçünün ilk kaydı. Son: bir önceki ölçüme göre değişim.' : 'Üye henüz ölçüm girmedi.'}>
+    {rows.length > 0 && <div style={{ overflowX: 'auto', padding: '8px 14px 12px' }}>
+      <table className="small" style={{ width: '100%', borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums' }}>
+        <thead><tr className="muted" style={{ textAlign: 'end' }}>
+          <th style={{ textAlign: 'start', fontWeight: 500, padding: '4px 0' }}>cm</th>
+          <th style={{ fontWeight: 500 }}>Başlangıç</th><th style={{ fontWeight: 500 }}>Şimdi</th>
+          <th style={{ fontWeight: 500 }}>Toplam</th><th style={{ fontWeight: 500 }}>Son</th>
+        </tr></thead>
+        <tbody>{rows.map(f => { const c = ch[f.key]; const first = c.dFirst == null ? c.v : Math.round((c.v - c.dFirst) * 10) / 10
+          return <tr key={f.key} style={{ borderTop: '1px solid var(--sep-op)', textAlign: 'end' }}>
+            <td style={{ textAlign: 'start', padding: '6px 0' }}>{f.label}</td>
+            <td className="muted">{cmv(first)}</td><td><b>{cmv(c.v)}</b></td>
+            <td>{sgn(c.dFirst)}</td><td className="muted">{sgn(c.dPrev)}</td>
+          </tr> })}</tbody>
+      </table>
+    </div>}
+  </Section>
+}

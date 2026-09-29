@@ -67,6 +67,7 @@
 import { beatsWeight } from './exercises.js'
 import { bestWeightForEntry } from './history.js'
 import { mergeNutrition } from './nutrition-core.js'   // Taşyürek: the daily nutrition log
+import { mergeMeasurements } from './measurements.js'   // Taşyürek: body measurements
 import { convertStateUnit, convertBodyWeight } from './units.js'
 
 const clone = o => JSON.parse(JSON.stringify(o))
@@ -388,6 +389,7 @@ export function mergeStates(a0, b0, { prefer } = {}) {
   }
   out.bodyweight = mergeBodyweight(n.bodyweight, o.bodyweight).map(clone)
   if (n.nutrition || o.nutrition) out.nutrition = mergeNutrition(n.nutrition, o.nutrition)
+  if (n.measurements || o.measurements) out.measurements = mergeMeasurements(n.measurements, o.measurements)
   if (list(n.favEx).length || list(o.favEx).length) out.favEx = [...new Set([...list(n.favEx), ...list(o.favEx)])]
   out.exWeights = clone(mergeExWeights(n.exWeights, o.exWeights))
   for (const [id, sources] of editedBy) {
