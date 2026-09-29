@@ -19,7 +19,8 @@ function Licenses({ close }) {
       Lisans metni: {a('https://www.gnu.org/licenses/agpl-3.0.html', 'gnu.org/licenses/agpl-3.0')}<br />
       Orijinal proje: {a('https://github.com/DuarteSantos8/openGym', 'github.com/DuarteSantos8/openGym')}</p>
     <p>Hareket verileri: hasaneyldrm/exercises-dataset (MIT). Hareket görselleri ve animasyonları ©
-      Gym visual. Vücut diyagramı: MuscleMap, Melih Colpan (MIT).</p>
+      Gym visual. Vücut diyagramı: MuscleMap, Melih Colpan (MIT). Besin değerlerinin bir kısmı: USDA National
+      Nutrient Database for Standard Reference, Release 28 (kamu malı).</p>
     <Button onClick={close}>Kapat</Button>
   </div>
 }

@@ -34,7 +34,7 @@ function recentFoods(S, list, iso) {
 
 function Amount({ food, meal, iso, onDone, onBack }) {
   const update = useStore(s => s.update)
-  const [qty, setQty] = useState(defaultQty(food))
+  const [qty, setQty] = useState(food.s?.[0]?.[1] || defaultQty(food))   // a handy serving first, when there is one
   const m = macrosFor(food, qty || 0)
   const chips = food.u === 'g' ? [50, 100, 150, 200, 250] : [0.5, 1, 1.5, 2, 3]
   const add = () => {
@@ -55,6 +55,7 @@ function Amount({ food, meal, iso, onDone, onBack }) {
       </Row>
     </Section>
     <div className="row" style={{ gap: 6, flexWrap: 'wrap', margin: '-4px 0 14px' }}>
+      {(food.s || []).map(([label, grams]) => <button key={label} className={'chip nocap' + (Number(qty) === grams ? ' on' : '')} onClick={() => setQty(grams)}>{label} · {grams} g</button>)}
       {chips.map(c => <button key={c} className={'chip nocap' + (Number(qty) === c ? ' on' : '')} onClick={() => setQty(c)}>{food.u === 'g' ? c + ' g' : fmtNum(c) + ' ×'}</button>)}
     </div>
     <div className="card" style={{ padding: '10px 14px', marginBottom: 14 }}>

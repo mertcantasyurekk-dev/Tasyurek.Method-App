@@ -1,12 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import { normFood, fold, searchFoods, macrosFor, defaultQty, perLine } from './foods.js'
-import data from '../data/foods-tr.json'
+import data from '../fooddata/foods-tr.json'
 
 const list = data.map(r => normFood(r))
 
 describe('the built-in list', () => {
-  it('is the tracker\'s 118 foods, every one with macros that add up', () => {
-    expect(list).toHaveLength(118)
+  it('is the tracker\'s 118 foods plus the USDA basics, every one with macros', () => {
+    expect(list.length).toBeGreaterThan(230)
+    expect(new Set(list.map(f => f.id)).size).toBe(list.length)
+    expect(new Set(list.map(f => fold(f.n))).size).toBe(list.length)
     for (const f of list) {
       expect(f.n).toBeTruthy()
       expect(f.p + f.c + f.f).toBeGreaterThan(0)
@@ -44,5 +46,19 @@ describe('amounts', () => {
     const f = normFood({ id: 'x', name: 'Yemekhane mercimek', unit: 'portion', portionLabel: '1 kase', protein: 9, carbs: 20, fat: 4, kcal: 150 }, true)
     expect(f).toMatchObject({ n: 'Yemekhane mercimek', u: 'p', l: '1 kase', p: 9, own: true, k: 152 })
     expect(normFood({ name: '' })).toBeNull()
+  })
+})
+
+describe('USDA basics', () => {
+  it('match the reference values and carry handy servings', () => {
+    const chicken = list.find(f => f.id === 'us05062')
+    expect(chicken).toMatchObject({ n: 'Tavuk göğsü (çiğ)', u: 'g', p: 22.5, c: 0, f: 2.6 })
+    const lentils = list.find(f => f.n === 'Mercimek (haşlanmış)')
+    expect(lentils).toMatchObject({ p: 9, c: 20.1, f: 0.4 })
+    const apple = list.find(f => f.n === 'Elma (100 g)')
+    expect(apple.s).toEqual([['1 orta boy', 182]])
+    expect(macrosFor(apple, 182).kcal).toBeGreaterThan(90)
+    expect(searchFoods(list, 'kiyma').slice(0, 5).every(f => fold(f.n).split(' ').includes('kiyma'))).toBe(true)
+    expect(searchFoods(list, 'tavuk gogsu').map(f => f.n)).toEqual(expect.arrayContaining(['Tavuk göğsü (ızgara)', 'Tavuk göğsü (çiğ)']))
   })
 })

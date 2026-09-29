@@ -61,8 +61,12 @@ gün geçişi (geriye dönük giriş), **Yemek ekle** ve **Günün öğünleri**
 
 **Yemek ekleme (FatSecret benzeri)** — `components/FoodSheet.jsx`, `lib/foods.js`: öğün seçimi (saate göre
 otomatik), Türkçe karakter duyarsız arama, "bu hafta eklediklerin", gram ya da porsiyon miktarı, peş peşe ekleme,
-listede olmayan yemeği ortak listeye kaydetme, "sadece makro gir". Liste: tracker'ın 118 yemeği
-(`src/data/foods-tr.json`, pencere açılınca yüklenir, ~3 KB sıkıştırılmış) + ortak liste
+listede olmayan yemeği ortak listeye kaydetme, "sadece makro gir". Liste (`src/fooddata/foods-tr.json`, pencere
+açılınca yüklenir, ~6 KB sıkıştırılmış, 242 kalem): tracker'ın 118 yemeği + USDA SR28'den (kamu malı) Türkçe
+adlandırılmış ~124 temel gıda (et/balık, süt ürünleri, tahıllar, baklagiller, sebze, meyve, kuruyemiş, yağ/sos),
+100 g bazlı ve uygun olanlarda hazır porsiyonlarla ("1 orta boy · 182 g"). USDA karbonhidratı lif dahildir;
+alkollü içecekler (kalorisi makrolardan gelmez) ve çay/kahve bilinçli olarak yok. Kaynak verisi:
+github.com/maxsu/USDA-SR28. + ortak liste
 `sharedData/customFoods` (eski tracker'la **aynı belge ve biçim**, iki uygulama aynı listeyi paylaşır).
 
 **Haftalık mühür — ne saklanır** (`lib/nutrition-core.js`): gün = `{ p, c, f, items, del, water, sleep, type,
