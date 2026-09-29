@@ -7,6 +7,7 @@ import { t, dateLocale } from '../lib/i18n.js'
 import { useCoached } from '../lib/coached.js'   // Taşyürek
 import { FIREBASE } from '../lib/firebase-api.js'
 import NutritionCard from '../components/NutritionCard.jsx'
+import CoachMessageCard from '../components/CoachMessages.jsx'
 import { bwSheet, goalSheet, dayOverrideSheet, calendarSheet, startFlow, starterPlanSheet, bwDeltaColor, weighInsSheet } from '../sheets.jsx'
 import LineChart from '../components/LineChart.jsx'
 import Icon from '../components/Icon.jsx'
@@ -116,6 +117,9 @@ export default function Home() {
         </Button>
       </div>}
     </div>
+
+    {/* Taşyürek: the coach's latest weekly message. */}
+    {FIREBASE && <CoachMessageCard />}
 
     {/* Taşyürek: today's macros, kcal and water against the coach's targets. */}
     {FIREBASE && <NutritionCard />}

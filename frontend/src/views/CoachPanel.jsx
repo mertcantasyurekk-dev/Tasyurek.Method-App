@@ -16,6 +16,7 @@ import { glyphOf } from '../lib/glyphs.js'
 import { Section, Row, Button, Check, SelectRow } from '../components/ui.jsx'
 import { tappable } from '../lib/use-sheet-keyboard.js'
 import { TargetsForm } from '../components/NutritionCard.jsx'
+import CoachWeekly from './CoachWeekly.jsx'
 import { totalsOf, kcalOf } from '../lib/nutrition.js'
 
 const toast = m => useUI.getState().toast(m)
@@ -141,6 +142,8 @@ export function CoachMember() {
       <Row icon="dumbbell" title="Toplam" value={`${workouts.length} antrenman`} />
       <Row icon="scale" title="Son kilo" value={bw[0] ? `${fmtNum(bw[0].w)} ${unit} · ${fmtDate(bw[0].d)}` : '—'} />
     </Section>
+
+    <CoachWeekly uid={uid} info={info} m={m} onChanged={load} />
 
     <Section title="Program" footer={m.plan ? `Son güncelleme: ${fmtDate(m.plan.updatedAt.slice(0, 10), true)}` : 'Bu üyeye henüz program atamadın. Üye şu an kendi aktardığı rutinleri görüyor.'}>
       <div style={{ padding: '12px 14px' }}>

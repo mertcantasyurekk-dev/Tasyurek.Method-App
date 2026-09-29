@@ -120,11 +120,11 @@ const planUrl = uid => `${DOCS()}/coachplan/${encodeURIComponent(uid)}`
 
 async function readPlan(a, uid = a.uid) {
   const { r, body } = await jsonFetch(planUrl(uid), { headers: { Authorization: 'Bearer ' + a.idToken } })
-  if (r.status === 404) return { exists: false, plan: null, targets: null, rev: 0, updateTime: null }
+  if (r.status === 404) return { exists: false, plan: null, targets: null, reviews: null, rev: 0, updateTime: null }
   if (!r.ok) throw err(r.status, body?.error?.message || 'plan read failed')
   const f = body.fields || {}
   const json = v => { try { return v?.stringValue ? JSON.parse(v.stringValue) : null } catch { return null } }
-  return { exists: true, plan: json(f.plan), targets: json(f.targets), rev: Number(f.rev?.integerValue || 0), updateTime: body.updateTime }
+  return { exists: true, plan: json(f.plan), targets: json(f.targets), reviews: json(f.reviews), rev: Number(f.rev?.integerValue || 0), updateTime: body.updateTime }
 }
 
 // The member's copy with the coach's program in place of their own routines and week.
@@ -152,6 +152,8 @@ async function readCombined(a) {
     if (p.plan) applyPlan(state, p.plan)
     // The coach's nutrition targets: the member sees them, never sets them.
     if (p.targets) state.coachTargets = p.targets; else delete state.coachTargets
+    // The coach's weekly messages, newest last.
+    if (Array.isArray(p.reviews) && p.reviews.length) state.coachReviews = p.reviews; else delete state.coachReviews
   }
   // A coached member's sessions start from the coach's prescription, never from their last session.
   if (state && state.startFrom === 'last') state.startFrom = 'plan'
@@ -291,7 +293,7 @@ async function coachMember(a, uid) {
   if (!r.ok && r.status !== 404) throw err(r.status, body?.error?.message || 'read failed')
   const state = r.ok ? parseState(body.fields || {}) : null
   const p = await readPlan(a, uid)
-  return { state, plan: p.plan, targets: p.targets, planRev: p.rev, trackerTargets: await trackerTargetsOf(a, uid) }
+  return { state, plan: p.plan, targets: p.targets, reviews: p.reviews || [], planRev: p.rev, trackerTargets: await trackerTargetsOf(a, uid) }
 }
 
 const cleanPlan = plan => {
@@ -443,6 +445,82 @@ async function addSharedFood(a, food) {
   throw err(409, 'Liste şu an meşgul, tekrar dene')
 }
 
+/* ------------------------------------------------------------ coach's own notes ---------------- */
+// coachnotes/{uid} = { note, goal, reports: <JSON [{ week, text, message, macro, importedAt }]> }.
+// Only the coach reads or writes it (rules): a member never sees their own health note or reports.
+const notesUrl = uid => `${DOCS()}/coachnotes/${encodeURIComponent(uid)}`
+
+async function readNotes(a, uid) {
+  const { r, body } = await jsonFetch(notesUrl(uid), { headers: { Authorization: 'Bearer ' + a.idToken } })
+  if (r.status === 404) return { exists: false, note: '', goal: '', reports: [], updateTime: null }
+  if (!r.ok) throw err(r.status, body?.error?.message || 'notes read failed')
+  const f = body.fields || {}
+  let reports = []
+  try { reports = f.reports?.stringValue ? JSON.parse(f.reports.stringValue) : [] } catch { reports = [] }
+  return { exists: true, note: f.note?.stringValue || '', goal: f.goal?.stringValue || '', reports: Array.isArray(reports) ? reports : [], updateTime: body.updateTime }
+}
+
+// Patch the coach's notes: { note?, goal?, addReport? }. Read-modify-write under a precondition.
+async function writeNotes(a, uid, patch) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const cur = await readNotes(a, uid)
+    const next = { note: cur.note, goal: cur.goal, reports: cur.reports }
+    if (typeof patch.note === 'string') next.note = patch.note.slice(0, 5000)
+    if (typeof patch.goal === 'string') next.goal = patch.goal.slice(0, 40)
+    if (patch.addReport) {
+      const r = patch.addReport
+      next.reports = [...next.reports, { week: r.week || null, text: String(r.text || '').slice(0, 20000), message: String(r.message || '').slice(0, 8000), macro: r.macro || null, importedAt: new Date().toISOString() }].slice(-60)
+    }
+    if (Array.isArray(patch.replaceReports)) next.reports = patch.replaceReports.slice(-60)
+    const pre = cur.exists ? 'currentDocument.updateTime=' + encodeURIComponent(cur.updateTime) : 'currentDocument.exists=false'
+    const { r, body: res } = await jsonFetch(`${notesUrl(uid)}?updateMask.fieldPaths=note&updateMask.fieldPaths=goal&updateMask.fieldPaths=reports&${pre}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + a.idToken },
+      body: JSON.stringify({ fields: { note: { stringValue: next.note }, goal: { stringValue: next.goal }, reports: { stringValue: JSON.stringify(next.reports) } } })
+    })
+    if (r.ok) return { ok: true, ...next }
+    if (!(r.status === 400 && /FAILED_PRECONDITION/.test(res?.error?.status || ''))) throw err(r.status, res?.error?.message || 'notes write failed')
+  }
+  throw err(409, 'Notlar bu arada değişti — tekrar dene')
+}
+
+// Weekly messages to the member, on the plan document the member reads.
+async function sendReview(a, uid, { text, week, remove, sentAt }) {
+  const cur = await readPlan(a, uid)
+  let reviews = Array.isArray(cur.reviews) ? cur.reviews : []
+  if (remove) reviews = reviews.filter(x => x.id !== remove)
+  else {
+    const t = String(text || '').trim()
+    if (!t) throw err(400, 'Mesaj boş')
+    // sentAt is only given when bringing old messages over from the tracker: they keep their date.
+    const at = sentAt && !isNaN(Date.parse(sentAt)) && Date.parse(sentAt) <= Date.now() ? new Date(sentAt).toISOString() : new Date().toISOString()
+    reviews = [...reviews, { id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), text: t.slice(0, 8000), week: week || null, sentAt: at }]
+      .sort((x, y) => ((x.sentAt || '') < (y.sentAt || '') ? -1 : 1)).slice(-52)
+  }
+  const pre = cur.exists ? 'currentDocument.updateTime=' + encodeURIComponent(cur.updateTime) : 'currentDocument.exists=false'
+  const { r, body: res } = await jsonFetch(`${planUrl(uid)}?updateMask.fieldPaths=reviews&updateMask.fieldPaths=rev&${pre}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + a.idToken },
+    body: JSON.stringify({ fields: { reviews: { stringValue: JSON.stringify(reviews) }, rev: { integerValue: String(cur.rev + 1) } } })
+  })
+  if (!r.ok) {
+    if (r.status === 400 && /FAILED_PRECONDITION/.test(res?.error?.status || '')) throw err(409, 'Bu arada başka bir değişiklik oldu — tekrar gönder')
+    throw err(r.status, res?.error?.message || 'review write failed')
+  }
+  return { ok: true, reviews }
+}
+
+// What the old tracker kept for the coach, to bring over once.
+async function trackerExtras(a, uid) {
+  const fields = ['coachNote', 'coachGoal', 'coachReports', 'weeklyRevisions'].map(f => 'mask.fieldPaths=' + f).join('&')
+  const { r, body } = await jsonFetch(`${DOCS()}/userdata/${encodeURIComponent(uid)}?${fields}`, { headers: { Authorization: 'Bearer ' + a.idToken } })
+  if (!r.ok) return { note: '', goal: '', reports: [], reviews: [] }
+  const f = body.fields || {}
+  const reports = (fromFs(f.coachReports) || []).filter(x => x && x.text).map(x => ({ week: x.week || null, text: x.text, message: x.message || '', macro: x.macro || null, importedAt: x.importedAt || null }))
+  const reviews = (fromFs(f.weeklyRevisions) || []).filter(x => x && x.text).map((x, i) => ({ id: 'tt' + i, text: x.text, week: null, sentAt: x.sentAt || null }))
+  return { note: fromFs(f.coachNote) || '', goal: fromFs(f.coachGoal) || '', reports, reviews }
+}
+
 async function asCoach() {
   const a = await idToken()
   if (!isAdmin(a)) throw err(403, 'coach only')
@@ -522,6 +600,25 @@ export async function firebaseApi(path, init = {}) {
       const uid = new URLSearchParams(path.split('?')[1] || '').get('uid')
       if (!uid) throw err(400, 'uid required')
       return coachMember(await asCoach(), uid)
+    }
+    case 'GET /api/coach/notes': {
+      const uid = new URLSearchParams(path.split('?')[1] || '').get('uid')
+      if (!uid) throw err(400, 'uid required')
+      const n = await readNotes(await asCoach(), uid)
+      return { note: n.note, goal: n.goal, reports: n.reports }
+    }
+    case 'PUT /api/coach/notes': {
+      if (!body?.uid) throw err(400, 'uid required')
+      return writeNotes(await asCoach(), String(body.uid), body)
+    }
+    case 'PUT /api/coach/review': {
+      if (!body?.uid) throw err(400, 'uid required')
+      return sendReview(await asCoach(), String(body.uid), body)
+    }
+    case 'GET /api/coach/tracker-extra': {
+      const uid = new URLSearchParams(path.split('?')[1] || '').get('uid')
+      if (!uid) throw err(400, 'uid required')
+      return trackerExtras(await asCoach(), uid)
     }
     case 'PUT /api/coach/targets':
       return coachPutTargets(await asCoach(), body)

@@ -53,6 +53,24 @@ Admin hesabında Ana sayfa ve Ayarlar'da **Koç paneli** (`views/CoachPanel.jsx`
   duran uygulama koçun değişikliğini fark eder.
 - Koç, üyenin `ogstate` belgesine **hiç yazmaz**; sadece okur.
 
+## Haftalık koçluk: not, hedef, 360° Analiz, değerlendirme
+
+Koç panelinde üye detayı (`views/CoachWeekly.jsx`, biçimler `lib/coach360.js`):
+- **Koç notu ve hedef** (Cut / Clean Bulk / Recomposition / Bakım / Podyum): `coachnotes/{uid}` — **sadece koç**
+  okur/yazar; üye kendi notunu da göremez. Kendi "Kaydet" düğmesi var.
+- **360° Analiz**: "Analiz verisini kopyala" tracker'daki `=== TT-VERI v1 ===` biçimini **aynen** üretir
+  (uid, analiz_haftası, `TT-REVIZE başlığında kullan: hafta=…`, koç notu, hedef, makro setleri, program,
+  [BAŞLANGIÇ] / [N-1] / [N], top setler + e1RM, günlük notlar). Hafta sabit takvim haftası: [N] = en son Pazar ile
+  biten Pzt→Paz. Isınma setleri sayılmaz. openGym'de vücut ölçüsü olmadığı için "ölçüler: —".
+  İçe aktarma `[[TT-REVIZE uid=… hafta=…]]` bloğunu aynı kurallarla okur: uid zorunlu ve kartın üyesi olmalı
+  (değilse kaydedilmez), hafta analiz haftası dışındaysa uyarı, MAKRO makul aralık dışındaysa yok sayılır.
+  "Kaydet": RAPOR arşive (`coachnotes.reports`), MESAJ değerlendirme taslağına. "Makroları uygula…" onaydan sonra
+  antrenman/dinlenme setlerini değiştirir, su/uyku hedefini korur.
+- **Haftalık değerlendirme**: taslak (istersen otomatik taslak) → Gönder → `coachplan/{uid}.reviews`. Üye ana
+  sayfada "Koçundan" kartında görür (okunmamışsa "Yeni"), tüm arşiv karttan ve Ayarlar'dan açılır. Geri alınabilir.
+- **Tracker'dan aktar** (bir kez, taraf boşken): eski `coachNote`, `coachGoal`, `coachReports`,
+  `weeklyRevisions` (orijinal tarihleriyle) gelir; `userdata`'ya yazılmaz.
+
 ## Beslenme (günlük takip)
 
 Ana sayfadaki kart (`components/NutritionCard.jsx`, stiller `components/nutrition.css`): kcal halkası (makro
@@ -111,6 +129,14 @@ biri 409 alır ve openGym'in kendi birleştirme mantığı devreye girer.
       allow read, write: if request.auth != null && request.auth.uid == uid;
       allow read: if request.auth != null &&
         request.auth.token.email == 'mertcan.tasyurekk@gmail.com';
+    }
+```
+
+Koç notları için (sadece koç):
+
+```
+    match /coachnotes/{uid} {
+      allow read, write: if isCoach();
     }
 ```
 

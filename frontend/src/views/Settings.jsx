@@ -34,6 +34,7 @@ import { FIREBASE } from '../lib/firebase-api.js'
 import { importFromTracker } from '../components/TrackerImport.jsx'
 import { useCoached } from '../lib/coached.js'
 import { openLicenses } from '../components/Licenses.jsx'
+import { reviewsSheet, reviewsOf } from '../components/CoachMessages.jsx'
 
 export default function Settings() {
   const coached = useCoached()   // Taşyürek
@@ -307,6 +308,7 @@ export default function Settings() {
       </> : user && FIREBASE ? <>
         {/* Taşyürek: accounts live in Firebase Auth and are made by the coach — sign out is all there is. */}
         {user.admin && <Row icon="wrench" iconTint="var(--acc)" title="Koç paneli" subtitle="Üyeler ve programları" accessory="chevron" onClick={() => nav('/panel')} />}
+        {!user.admin && reviewsOf(S).length > 0 && <Row icon="envelope" iconTint="var(--acc)" title="Koçunun değerlendirmeleri" value={String(reviewsOf(S).length)} accessory="chevron" onClick={reviewsSheet} />}
         <Row icon="signOut" iconTint="var(--red)" title={t('Sign out')} danger onClick={signOutHere} />
       </> : user ? <>
         {user.admin && <Row icon="wrench" iconTint="var(--indigo)" title={t('Admin dashboard')} accessory="chevron" onClick={() => nav('/admin')} />}

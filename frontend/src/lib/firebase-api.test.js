@@ -409,3 +409,63 @@ describe('shared foods', () => {
     expect((await firebaseApi('/api/foods')).foods.map(f => f.name)).toEqual(['Başkası', 'Benim'])
   })
 })
+
+describe('coach notes, reviews, tracker extras', () => {
+  const asCoach = () => post('/api/login/password', { name: 'mertcan.tasyurekk@gmail.com', password: 'a' })
+  const asMember = () => post('/api/login/password', { name: 'uye@x.com', password: 'dogru' })
+  const PUT = (p, b) => firebaseApi(p, { method: 'PUT', body: JSON.stringify(b) })
+
+  it('notes are the coach\'s alone; reports pile up', async () => {
+    await asCoach()
+    expect(await firebaseApi('/api/coach/notes?uid=U1')).toEqual({ note: '', goal: '', reports: [] })
+    await PUT('/api/coach/notes', { uid: 'U1', note: 'Sol diz: squat yok', goal: 'Cut' })
+    await PUT('/api/coach/notes', { uid: 'U1', addReport: { week: '2026-09-27', text: 'rapor 1', message: 'm1', macro: { training: { p: 180, c: 240, f: 60 } } } })
+    await PUT('/api/coach/notes', { uid: 'U1', goal: 'Bakım' })
+    const n = await firebaseApi('/api/coach/notes?uid=U1')
+    expect(n).toMatchObject({ note: 'Sol diz: squat yok', goal: 'Bakım' })
+    expect(n.reports).toHaveLength(1)
+    expect(n.reports[0]).toMatchObject({ week: '2026-09-27', text: 'rapor 1' })
+    expect([...fb.docs.keys()]).toContain('coachnotes/U1')
+    await post('/api/logout', {}); await asMember()
+    await expect(firebaseApi('/api/coach/notes?uid=U1')).rejects.toMatchObject({ status: 403 })
+    const d = await firebaseApi('/api/data')
+    expect(JSON.stringify(d.state || {})).not.toMatch(/squat|rapor 1/)
+  })
+
+  it('a weekly message reaches the member\'s open app, and can be taken back', async () => {
+    await asCoach()
+    const r1 = await PUT('/api/coach/review', { uid: 'U1', text: 'Harika hafta!', week: '2026-09-27' })
+    const r2 = await PUT('/api/coach/review', { uid: 'U1', text: 'İkinci mesaj' })
+    expect(new Set(r2.reviews.map(x => x.id)).size).toBe(2)   // unique ids, even in the same millisecond
+    await expect(PUT('/api/coach/review', { uid: 'U1', text: '  ' })).rejects.toMatchObject({ status: 400 })
+    const old = await PUT('/api/coach/review', { uid: 'U1', text: 'tracker\'dan eski', sentAt: '2026-09-01T09:00:00Z' })
+    expect(old.reviews[0]).toMatchObject({ text: 'tracker\'dan eski', sentAt: '2026-09-01T09:00:00.000Z' })   // keeps its date, sorts first
+    await PUT('/api/coach/review', { uid: 'U1', remove: old.reviews[0].id })
+    await post('/api/logout', {}); await asMember()
+    const d = await firebaseApi('/api/data')
+    expect(d.state.coachReviews.map(x => x.text)).toEqual(['Harika hafta!', 'İkinci mesaj'])
+    expect(d.rev).toBe(4000000)   // four writes to the plan document: two sent, one old brought in and taken back
+    await expect(PUT('/api/coach/review', { uid: 'U1', text: 'kendime mesaj' })).rejects.toMatchObject({ status: 403 })
+    await post('/api/logout', {}); await asCoach()
+    await PUT('/api/coach/review', { uid: 'U1', remove: r1.reviews[0].id })
+    await post('/api/logout', {}); await asMember()
+    expect((await firebaseApi('/api/data')).state.coachReviews.map(x => x.text)).toEqual(['İkinci mesaj'])
+  })
+
+  it('brings the tracker\'s note, goal, reports and messages', async () => {
+    const str = v => ({ stringValue: v })
+    const map = o => ({ mapValue: { fields: Object.fromEntries(Object.entries(o).map(([k, v]) => [k, str(v)])) } })
+    fb.docs.set('userdata/U1', { fields: {
+      coachNote: str('FMF, kolşisin'), coachGoal: str('Recomposition'),
+      coachReports: { arrayValue: { values: [map({ week: '2026-09-20', text: 'eski rapor', message: 'eski mesaj' })] } },
+      weeklyRevisions: { arrayValue: { values: [map({ text: 'eski değerlendirme', sentAt: '2026-09-21T10:00:00Z' })] } }
+    }, updateTime: 'u' })
+    await asCoach()
+    const x = await firebaseApi('/api/coach/tracker-extra?uid=U1')
+    expect(x.note).toBe('FMF, kolşisin')
+    expect(x.goal).toBe('Recomposition')
+    expect(x.reports[0]).toMatchObject({ week: '2026-09-20', text: 'eski rapor' })
+    expect(x.reviews[0]).toMatchObject({ text: 'eski değerlendirme', sentAt: '2026-09-21T10:00:00Z' })
+    expect(fb.calls.filter(c => c.url.includes('/userdata/')).every(c => !c.init.method || c.init.method === 'GET')).toBe(true)
+  })
+})
