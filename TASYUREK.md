@@ -71,6 +71,24 @@ Koç panelinde üye detayı (`views/CoachWeekly.jsx`, biçimler `lib/coach360.js
 - **Tracker'dan aktar** (bir kez, taraf boşken): eski `coachNote`, `coachGoal`, `coachReports`,
   `weeklyRevisions` (orijinal tarihleriyle) gelir; `userdata`'ya yazılmaz.
 
+## Kardiyo, haftalık hedefler, takviyeler, günün notu
+
+`lib/daily.js`, `lib/daily-message.js`, kartlar `components/DailyCards.jsx`.
+- **Kardiyo**: `S.cardio[tarih] = { items: [{ id, type, min, t }], del, _ts }` (tür değerleri tracker'ınki: "Walking",
+  "HIIT"…; Türkçe etiketlerle gösterilir). Senkron kalem bazında. Antrenman içindeki openGym kardiyo hareketleri de sayılır;
+  sadece kardiyodan oluşan antrenman "antrenman" sayılmaz.
+- **Haftalık hedefler** (koç, hedef formunda "Haftalık"): `coachTargets.workoutsPerWeek`, `cardioSessionsPerWeek`,
+  `cardioMinutesPerWeek`. Ana sayfada "Bu hafta" kartı (ilerleme çubukları + kardiyo ekle + bugünün kardiyosu).
+  "Makroları uygula" artık diğer hedefleri (su, uyku, haftalık) korur.
+- **Takviyeler**: koç üye detayında gruplu liste kurar (tracker'ın `customSupplements` biçimi, `coachplan.supplements`);
+  "Tracker'dan al" ile gelir. Üye Ana sayfada her gün işaretler: `S.supps[tarih] = { on: { itemId: true }, _ts }`
+  (senkron: gün bazında son işaretleyen). Koç Özet'te 7 günlük uyumu görür.
+- **Günün notu**: üyenin kendi rakamlarından kural tabanlı mesaj (bugün antrenman yapıldı mı, haftalık hedef açığı,
+  son iki gün protein, dünkü kayıt/isabet, uyku, kardiyo açığı, kayıt serisi, ölçüm zamanı, takviye uyumu). En ağır
+  kural kazanır, cümle güne göre döner, gün içinde sabit kalır, kapatılabilir. Kilo yönü hakkında yorum yapmaz (hedef koçta).
+- 360°: kardiyo satırı kardiyo kaydını da sayar; [N]'de `takviye uyumu: %…`.
+- Tracker'dan: günlük kardiyo, takviye işaretleri (üye aktarımı); takviye listesi ve haftalık hedefler (koçun program aktarımı).
+
 ## Vücut ölçüleri
 
 `lib/measurements.js`, Ana sayfa kartı `components/MeasurementsCard.jsx`. Tracker'ın 10 alanı ve anahtarları: omuz

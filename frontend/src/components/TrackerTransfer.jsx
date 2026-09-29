@@ -20,8 +20,15 @@ export async function loadTrackerPlan(uid, memberCustom) {
 }
 
 // Writes the plan, and the tracker's targets when the member has none here yet.
-export async function assignTrackerPlan(uid, tp, { targets, trackerTargets }) {
+export async function assignTrackerPlan(uid, tp, { targets, trackerTargets, supplements }) {
   await api('/api/coach/plan', { method: 'PUT', body: JSON.stringify({ uid, plan: { routines: tp.routines, week: tp.week, customEx: tp.customEx } }) })
+  // The tracker's supplement list, when this member has none here yet.
+  if (!supplements) {
+    try {
+      const x = await api('/api/coach/tracker-extra?uid=' + encodeURIComponent(uid))
+      if (x.supplements?.length) await api('/api/coach/supplements', { method: 'PUT', body: JSON.stringify({ uid, supplements: x.supplements }) })
+    } catch { /* the plan is what matters here */ }
+  }
   let targetsSet = false
   if (!targets && trackerTargets && (trackerTargets.training || trackerTargets.rest)) {
     try { await api('/api/coach/targets', { method: 'PUT', body: JSON.stringify({ uid, targets: trackerTargets }) }); targetsSet = true } catch { /* the plan is what matters here */ }
@@ -38,7 +45,7 @@ function OneMember({ uid, name, tp, m, onDone, close }) {
   const go = async () => {
     setBusy(true)
     try {
-      const r = await assignTrackerPlan(uid, tp, { targets: m.targets, trackerTargets: m.trackerTargets })
+      const r = await assignTrackerPlan(uid, tp, { targets: m.targets, trackerTargets: m.trackerTargets, supplements: m.supplements })
       toast(`${name}: tracker programı atandı${r.targetsSet ? ', beslenme hedefleri de' : ''}`); close(); onDone && onDone()
     } catch (e) { toast(e.data?.error || e.message) } finally { setBusy(false) }
   }
@@ -84,7 +91,7 @@ function Everyone({ members, onDone, close }) {
     setBusy(true)
     const out = []
     for (const r of rows.filter(x => picked.has(x.uid))) {
-      try { const res = await assignTrackerPlan(r.uid, r.tp, { targets: r.m.targets, trackerTargets: r.m.trackerTargets }); out.push(`✓ ${r.name}${res.targetsSet ? ' (+ hedefler)' : ''}`) }
+      try { const res = await assignTrackerPlan(r.uid, r.tp, { targets: r.m.targets, trackerTargets: r.m.trackerTargets, supplements: r.m.supplements }); out.push(`✓ ${r.name}${res.targetsSet ? ' (+ hedefler)' : ''}`) }
       catch (e) { out.push(`✗ ${r.name}: ${e.data?.error || e.message}`) }
       setLog([...out])
     }

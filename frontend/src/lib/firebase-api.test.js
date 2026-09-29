@@ -361,11 +361,11 @@ describe('coach targets', () => {
   })
 
   it('offers the old tracker\'s targets to start from', async () => {
-    const payload = { targets: { protein: 150, carbs: 200, fat: 55, water: 3, sleep: 7.5 }, customMacroTargets: { trainingDay: { protein: 180, carbs: 250, fat: 60 }, offDay: { protein: 180, carbs: 150, fat: 70 } } }
+    const payload = { targets: { protein: 150, carbs: 200, fat: 55, water: 3, sleep: 7.5 }, customMacroTargets: { trainingDay: { protein: 180, carbs: 250, fat: 60 }, offDay: { protein: 180, carbs: 150, fat: 70 } }, customWeeklyTargets: { workoutsPerWeek: 4, cardioSessionsPerWeek: 3, cardioMinutesPerWeek: 120 } }
     fb.docs.set('userdata/U1', { fields: { payload: { stringValue: JSON.stringify(payload) } }, updateTime: 'x' })
     await asCoach()
     const one = await firebaseApi('/api/coach/member?uid=U1')
-    expect(one.trackerTargets).toEqual({ training: { p: 180, c: 250, f: 60 }, rest: { p: 180, c: 150, f: 70 }, water: 3, sleep: 7.5 })
+    expect(one.trackerTargets).toEqual({ training: { p: 180, c: 250, f: 60 }, rest: { p: 180, c: 150, f: 70 }, water: 3, sleep: 7.5, workoutsPerWeek: 4, cardioSessionsPerWeek: 3, cardioMinutesPerWeek: 120 })
     expect(one.targets).toBeNull()
   })
 })
@@ -572,5 +572,31 @@ describe('tracker payload for the coach', () => {
     await post('/api/login/password', { name: 'mertcan.tasyurekk@gmail.com', password: 'a' })
     expect(await firebaseApi('/api/coach/tracker-payload?uid=U1')).toEqual({ payload: '{"programs":[]}' })
     expect(await firebaseApi('/api/coach/tracker-payload?uid=NOPE')).toEqual({ payload: null })
+  })
+})
+
+describe('weekly targets and supplements', () => {
+  const asCoach = () => post('/api/login/password', { name: 'mertcan.tasyurekk@gmail.com', password: 'a' })
+  const PUT = (p, b) => firebaseApi(p, { method: 'PUT', body: JSON.stringify(b) })
+  it('weekly targets alone are enough; the member sees them', async () => {
+    await asCoach()
+    const r = await PUT('/api/coach/targets', { uid: 'U1', targets: { workoutsPerWeek: '4', cardioMinutesPerWeek: 120.4 } })
+    expect(r.targets).toMatchObject({ workoutsPerWeek: 4, cardioMinutesPerWeek: 120, cardioSessionsPerWeek: null, training: null })
+    await expect(PUT('/api/coach/targets', { uid: 'U1', targets: {} })).rejects.toMatchObject({ status: 400 })
+    await post('/api/logout', {}); await post('/api/login/password', { name: 'uye@x.com', password: 'dogru' })
+    expect((await firebaseApi('/api/data')).state.coachTargets.workoutsPerWeek).toBe(4)
+  })
+  it('the coach sets a supplement list, cleaned; the member reads it; the tracker\'s comes over', async () => {
+    await asCoach()
+    const list = [{ id: 'morning', label: 'Sabah', items: [{ id: 'd3', name: 'D3 + K2', dose: '5000 IU' }, { id: 'x', name: '' }] }, { label: 'Boş', items: [] }]
+    const r = await PUT('/api/coach/supplements', { uid: 'U1', supplements: list })
+    expect(r.supplements).toEqual([{ id: 'morning', label: 'Sabah', items: [{ id: 'd3', name: 'D3 + K2', dose: '5000 IU' }] }])
+    await post('/api/logout', {}); await post('/api/login/password', { name: 'uye@x.com', password: 'dogru' })
+    expect((await firebaseApi('/api/data')).state.coachSupplements[0].items[0].name).toBe('D3 + K2')
+    await expect(PUT('/api/coach/supplements', { uid: 'U1', supplements: [] })).rejects.toMatchObject({ status: 403 })
+    const str = v => ({ stringValue: v })
+    fb.docs.set('userdata/U2', { fields: { customSupplements: { arrayValue: { values: [{ mapValue: { fields: { id: str('ev'), label: str('Akşam'), items: { arrayValue: { values: [{ mapValue: { fields: { id: str('mg'), name: str('Magnezyum'), dose: str('400 mg') } } }] } } } } }] } } }, updateTime: 'u' })
+    await post('/api/logout', {}); await asCoach()
+    expect((await firebaseApi('/api/coach/tracker-extra?uid=U2')).supplements).toEqual([{ id: 'ev', label: 'Akşam', items: [{ id: 'mg', name: 'Magnezyum', dose: '400 mg' }] }])
   })
 })

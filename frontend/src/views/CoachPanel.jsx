@@ -20,6 +20,8 @@ import CoachWeekly from './CoachWeekly.jsx'
 import { loadTrackerPlan, oneMemberTransferSheet, everyoneTransferSheet } from '../components/TrackerTransfer.jsx'
 import { backupSheet } from '../components/Backup.jsx'
 import { FIELDS as MEAS_FIELDS, changesOf, latestOf as lastMeasurement, daysSinceLast as measAgo } from '../lib/measurements.js'
+import { weekProgress, suppAdherence } from '../lib/daily.js'
+import { TextField } from '../components/ui.jsx'
 import { totalsOf, kcalOf } from '../lib/nutrition.js'
 
 const toast = m => useUI.getState().toast(m)
@@ -155,6 +157,8 @@ export function CoachMember() {
       <Row icon="flame" title="Son 7 gün" value={`${info.workouts7 || 0} antrenman`} />
       <Row icon="dumbbell" title="Toplam" value={`${workouts.length} antrenman`} />
       <Row icon="scale" title="Son kilo" value={bw[0] ? `${fmtNum(bw[0].w)} ${unit} · ${fmtDate(bw[0].d)}` : '—'} />
+      <Row icon="figureRun" title="Bu hafta" value={(() => { const w = weekProgress({ ...st, coachTargets: m.targets || undefined }, todayISO()); return `${w.workouts}${w.targets.workouts ? '/' + w.targets.workouts : ''} antrenman · ${w.sessions} kardiyo, ${w.minutes} dk` })()} />
+      {m.supplements?.length > 0 && <Row icon="checkCircle" title="Takviye uyumu (7 gün)" value={(() => { const a = suppAdherence({ ...st, coachSupplements: m.supplements }, todayISO(), 7); return a === null ? '—' : '%' + a })()} />}
       <Row icon="target" title="Son ölçüm" value={lastMeasurement(st) ? `${fmtDate(lastMeasurement(st).d)} · ${measAgo(st, todayISO())} gün önce` : '—'} />
     </Section>
 
@@ -176,6 +180,8 @@ export function CoachMember() {
     </Section>
 
     <NutritionSection uid={uid} name={info.name} m={m} st={st} onSaved={load} />
+
+    <SupplementsSection uid={uid} name={info.name} m={m} onSaved={load} />
 
     <MeasurementsSection st={st} />
 
@@ -281,6 +287,7 @@ function NutritionSection({ uid, name, m, st, onSaved }) {
     <Row icon="barbell" title="Antrenman günü" subtitle={setLine(T?.training)} />
     <Row icon="moon" title="Dinlenme günü" subtitle={setLine(T?.rest)} />
     <Row icon="drop" title="Su · uyku" value={T ? `${T.water ? fmtNum(T.water) + ' L' : '—'} · ${T.sleep ? fmtNum(T.sleep) + ' sa' : '—'}` : '—'} />
+    <Row icon="calendar" title="Haftalık" value={T && (T.workoutsPerWeek || T.cardioSessionsPerWeek || T.cardioMinutesPerWeek) ? `${T.workoutsPerWeek || '—'} antrenman · ${T.cardioSessionsPerWeek || '—'} kardiyo · ${T.cardioMinutesPerWeek || '—'} dk` : '—'} />
     <Row icon="chartLine" title="Son 7 gün ortalaması" subtitle={avg ? `${avg.days} gün kayıt · ${setLine(avg)}${avg.water ? ' · su ' + fmtNum(Math.round(avg.water * 10) / 10) + ' L' : ''}` : 'Kayıt yok'} />
     <div style={{ padding: '10px 14px 14px' }}>
       <Button variant="primary" icon="pencil" onClick={() => targetsSheet({ uid, name, initial: T || m.trackerTargets, fromTracker: !T && !!m.trackerTargets, onSaved })}>
@@ -332,5 +339,57 @@ function MeasurementsSection({ st }) {
           </tr> })}</tbody>
       </table>
     </div>}
+  </Section>
+}
+
+/* ------------------------------------------------------------------ supplements ----------------- */
+
+const newId = p => p + Math.random().toString(36).slice(2, 8)
+
+function SupplementsSection({ uid, name, m, onSaved }) {
+  const [list, setList] = useState(null)       // editing copy
+  const [busy, setBusy] = useState(false)
+  const cur = m.supplements || []
+  const edit = list !== null
+  const start = () => setList(JSON.parse(JSON.stringify(cur.length ? cur : [{ id: newId('g'), label: 'Sabah', items: [] }])))
+  const fromTracker = async () => {
+    try {
+      const x = await api('/api/coach/tracker-extra?uid=' + encodeURIComponent(uid))
+      if (!x.supplements?.length) { toast('Tracker\'da bu üye için takviye listesi yok'); return }
+      setList(x.supplements)
+    } catch (e) { toast(e.message) }
+  }
+  const save = async () => {
+    setBusy(true)
+    try { await api('/api/coach/supplements', { method: 'PUT', body: JSON.stringify({ uid, supplements: list }) }); setList(null); toast(`${name} için takviyeler kaydedildi`); onSaved && onSaved() }
+    catch (e) { toast(e.data?.error || e.message) } finally { setBusy(false) }
+  }
+  const setG = (gi, f) => setList(l => l.map((g, i) => (i === gi ? f(g) : g)))
+  if (!edit) return <Section title="Takviyeler" footer={cur.length ? 'Üye ana sayfasında her gün işaretler.' : 'Liste yok: üyede takviye kartı görünmez.'}>
+    {cur.map(g => <Row key={g.id} icon="checkCircle" title={g.label} subtitle={g.items.map(i => i.name + (i.dose ? ` (${i.dose})` : '')).join(' · ')} />)}
+    <div style={{ padding: '10px 14px 14px' }} className="row" >
+      <Button size="sm" variant="tinted" icon="pencil" onClick={start}>{cur.length ? 'Düzenle' : 'Liste oluştur'}</Button>
+      <div style={{ width: 8 }} />
+      {!cur.length && <Button size="sm" icon="download" onClick={fromTracker}>Tracker'dan al</Button>}
+    </div>
+  </Section>
+  return <Section title="Takviyeler — düzenle" footer="Boş satırlar kaydedilmez. Grubu silmek için içindeki her şeyi sil.">
+    <div style={{ padding: '10px 14px 14px' }}>
+      {list.map((g, gi) => <div key={g.id} className="card" style={{ marginBottom: 10 }}>
+        <TextField value={g.label} onChange={e => setG(gi, x => ({ ...x, label: e.target.value }))} placeholder="Grup (ör. Sabah — kahvaltıyla)" maxLength={80} />
+        {g.items.map((it, ii) => <div key={it.id} className="row" style={{ gap: 6, marginTop: 8 }}>
+          <TextField value={it.name} onChange={e => setG(gi, x => ({ ...x, items: x.items.map((y, j) => (j === ii ? { ...y, name: e.target.value } : y)) }))} placeholder="Ad" maxLength={80} style={{ flex: 2 }} />
+          <TextField value={it.dose} onChange={e => setG(gi, x => ({ ...x, items: x.items.map((y, j) => (j === ii ? { ...y, dose: e.target.value } : y)) }))} placeholder="Doz" maxLength={120} style={{ flex: 2 }} />
+          <button className="iconbtn" aria-label="Sil" onClick={() => setG(gi, x => ({ ...x, items: x.items.filter((_, j) => j !== ii) }))}><Icon name="trash" /></button>
+        </div>)}
+        <div style={{ height: 8 }} />
+        <Button size="sm" variant="ghost" icon="plus" onClick={() => setG(gi, x => ({ ...x, items: [...x.items, { id: newId('i'), name: '', dose: '' }] }))}>Takviye ekle</Button>
+      </div>)}
+      <Button size="sm" variant="ghost" icon="plus" onClick={() => setList(l => [...l, { id: newId('g'), label: '', items: [] }])}>Grup ekle</Button>
+      <div style={{ height: 10 }} />
+      <Button variant="primary" icon="checkCircle" disabled={busy} onClick={save}>{busy ? 'Kaydediliyor…' : 'Kaydet'}</Button>
+      <div style={{ height: 8 }} />
+      <Button variant="ghost" className="dim" onClick={() => setList(null)}>{t('Cancel')}</Button>
+    </div>
   </Section>
 }

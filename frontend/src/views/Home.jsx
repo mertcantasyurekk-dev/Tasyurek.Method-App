@@ -10,6 +10,7 @@ import NutritionCard from '../components/NutritionCard.jsx'
 import CoachMessageCard from '../components/CoachMessages.jsx'
 import { maybeAutoBackup } from '../components/Backup.jsx'
 import MeasurementsCard from '../components/MeasurementsCard.jsx'
+import { DailyMessageCard, WeekCard, SupplementsCard } from '../components/DailyCards.jsx'
 import { bwSheet, goalSheet, dayOverrideSheet, calendarSheet, startFlow, starterPlanSheet, bwDeltaColor, weighInsSheet } from '../sheets.jsx'
 import LineChart from '../components/LineChart.jsx'
 import Icon from '../components/Icon.jsx'
@@ -125,8 +126,15 @@ export default function Home() {
     {/* Taşyürek: the coach's latest weekly message. */}
     {FIREBASE && <CoachMessageCard />}
 
+    {/* Taşyürek: the message of the day, from the member's own numbers. */}
+    {FIREBASE && <DailyMessageCard />}
+
     {/* Taşyürek: today's macros, kcal and water against the coach's targets. */}
     {FIREBASE && <NutritionCard />}
+
+    {/* Taşyürek: this week against the weekly targets, with the cardio log; today's supplements. */}
+    {FIREBASE && <WeekCard />}
+    {FIREBASE && <SupplementsCard />}
 
     {/* Taşyürek: the coach's way into the panel, at the top of Home. */}
     {FIREBASE && user?.admin && <div className="card tappable" style={{ cursor: 'pointer' }} {...tappable(() => nav('/panel'))}>

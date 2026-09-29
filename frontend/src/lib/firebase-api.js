@@ -120,11 +120,11 @@ const planUrl = uid => `${DOCS()}/coachplan/${encodeURIComponent(uid)}`
 
 async function readPlan(a, uid = a.uid) {
   const { r, body } = await jsonFetch(planUrl(uid), { headers: { Authorization: 'Bearer ' + a.idToken } })
-  if (r.status === 404) return { exists: false, plan: null, targets: null, reviews: null, rev: 0, updateTime: null }
+  if (r.status === 404) return { exists: false, plan: null, targets: null, reviews: null, supplements: null, rev: 0, updateTime: null }
   if (!r.ok) throw err(r.status, body?.error?.message || 'plan read failed')
   const f = body.fields || {}
   const json = v => { try { return v?.stringValue ? JSON.parse(v.stringValue) : null } catch { return null } }
-  return { exists: true, plan: json(f.plan), targets: json(f.targets), reviews: json(f.reviews), rev: Number(f.rev?.integerValue || 0), updateTime: body.updateTime }
+  return { exists: true, plan: json(f.plan), targets: json(f.targets), reviews: json(f.reviews), supplements: json(f.supplements), rev: Number(f.rev?.integerValue || 0), updateTime: body.updateTime }
 }
 
 // The member's copy with the coach's program in place of their own routines and week.
@@ -154,6 +154,8 @@ async function readCombined(a) {
     if (p.targets) state.coachTargets = p.targets; else delete state.coachTargets
     // The coach's weekly messages, newest last.
     if (Array.isArray(p.reviews) && p.reviews.length) state.coachReviews = p.reviews; else delete state.coachReviews
+    // The coach's supplement list for this member (the tracker's customSupplements shape).
+    if (Array.isArray(p.supplements)) state.coachSupplements = p.supplements; else delete state.coachSupplements
   }
   // A coached member's sessions start from the coach's prescription, never from their last session.
   if (state && state.startFrom === 'last') state.startFrom = 'plan'
@@ -295,7 +297,7 @@ async function coachMember(a, uid) {
   if (!r.ok && r.status !== 404) throw err(r.status, body?.error?.message || 'read failed')
   const state = r.ok ? parseState(body.fields || {}) : null
   const p = await readPlan(a, uid)
-  return { state, plan: p.plan, targets: p.targets, reviews: p.reviews || [], planRev: p.rev, trackerTargets: await trackerTargetsOf(a, uid) }
+  return { state, plan: p.plan, targets: p.targets, reviews: p.reviews || [], supplements: Array.isArray(p.supplements) ? p.supplements : null, planRev: p.rev, trackerTargets: await trackerTargetsOf(a, uid) }
 }
 
 const cleanPlan = plan => {
@@ -344,7 +346,9 @@ async function trackerTargetsOf(a, uid) {
     if (!pl) return null
     const cm = pl.customMacroTargets || {}, t = pl.targets || {}
     const set = x => (x && (x.protein || x.carbs || x.fat) ? { p: x.protein, c: x.carbs, f: x.fat } : null)
-    return { training: set(cm.trainingDay) || set(t), rest: set(cm.offDay), water: t.water || null, sleep: t.sleep || null }
+    const wk = pl.customWeeklyTargets || {}
+    return { training: set(cm.trainingDay) || set(t), rest: set(cm.offDay), water: t.water || null, sleep: t.sleep || null,
+      workoutsPerWeek: wk.workoutsPerWeek || null, cardioSessionsPerWeek: wk.cardioSessionsPerWeek || null, cardioMinutesPerWeek: wk.cardioMinutesPerWeek || null }
   } catch { return null }
 }
 
@@ -356,8 +360,10 @@ export function cleanTargets(t) {
     const o = { p: num(s.p, 500), c: num(s.c, 1000), f: num(s.f, 300) }
     return o.p && o.c && o.f ? o : null
   }
-  const out = { training: set(t?.training), rest: set(t?.rest), water: num(t?.water, 10), sleep: num(t?.sleep, 14) }
-  if (!out.training && !out.rest) throw err(400, 'En az bir makro seti gerekli (P, K ve Y dolu olmalı)')
+  const whole = (v, max) => { const x = num(v, max); return x ? Math.round(x) : null }
+  const out = { training: set(t?.training), rest: set(t?.rest), water: num(t?.water, 10), sleep: num(t?.sleep, 14),
+    workoutsPerWeek: whole(t?.workoutsPerWeek, 14), cardioSessionsPerWeek: whole(t?.cardioSessionsPerWeek, 21), cardioMinutesPerWeek: whole(t?.cardioMinutesPerWeek, 1500) }
+  if (!out.training && !out.rest && !out.workoutsPerWeek && !out.cardioSessionsPerWeek && !out.cardioMinutesPerWeek) throw err(400, 'En az bir makro seti ya da haftalık hedef gerekli')
   return out
 }
 
@@ -514,13 +520,14 @@ async function sendReview(a, uid, { text, week, remove, sentAt }) {
 
 // What the old tracker kept for the coach, to bring over once.
 async function trackerExtras(a, uid) {
-  const fields = ['coachNote', 'coachGoal', 'coachReports', 'weeklyRevisions'].map(f => 'mask.fieldPaths=' + f).join('&')
+  const fields = ['coachNote', 'coachGoal', 'coachReports', 'weeklyRevisions', 'customSupplements'].map(f => 'mask.fieldPaths=' + f).join('&')
   const { r, body } = await jsonFetch(`${DOCS()}/userdata/${encodeURIComponent(uid)}?${fields}`, { headers: { Authorization: 'Bearer ' + a.idToken } })
-  if (!r.ok) return { note: '', goal: '', reports: [], reviews: [] }
+  if (!r.ok) return { note: '', goal: '', reports: [], reviews: [], supplements: [] }
   const f = body.fields || {}
   const reports = (fromFs(f.coachReports) || []).filter(x => x && x.text).map(x => ({ week: x.week || null, text: x.text, message: x.message || '', macro: x.macro || null, importedAt: x.importedAt || null }))
   const reviews = (fromFs(f.weeklyRevisions) || []).filter(x => x && x.text).map((x, i) => ({ id: 'tt' + i, text: x.text, week: null, sentAt: x.sentAt || null }))
-  return { note: fromFs(f.coachNote) || '', goal: fromFs(f.coachGoal) || '', reports, reviews }
+  const supplements = cleanSupplements(fromFs(f.customSupplements) || [])
+  return { note: fromFs(f.coachNote) || '', goal: fromFs(f.coachGoal) || '', reports, reviews, supplements }
 }
 
 /* ------------------------------------------------------------ backups -------------------------- */
@@ -605,6 +612,32 @@ async function listBackups(a) {
   return all.filter(d => d.fields.kind?.stringValue === 'og')
     .map(d => ({ id: d.id, day: d.fields.day?.stringValue, createdAt: d.fields.createdAt?.timestampValue || null, bytes: Number(d.fields.bytes?.integerValue || 0), split: !!d.fields.split?.booleanValue }))
     .sort((x, y) => (x.id < y.id ? 1 : -1))
+}
+
+// A member's supplement list: groups of items, the tracker's customSupplements shape.
+export function cleanSupplements(list) {
+  const s = (v, n) => String(v ?? '').trim().slice(0, n)
+  return (Array.isArray(list) ? list : []).map((g, gi) => ({
+    id: s(g?.id, 40) || 'g' + gi, label: s(g?.label, 80) || 'Takviyeler',
+    items: (Array.isArray(g?.items) ? g.items : []).map((i, ii) => ({ id: s(i?.id, 40) || `g${gi}i${ii}`, name: s(i?.name, 80), dose: s(i?.dose, 120) })).filter(i => i.name).slice(0, 30)
+  })).filter(g => g.items.length).slice(0, 12)
+}
+
+async function coachPutSupplements(a, body) {
+  const uid = String(body?.uid || '')
+  if (!uid) throw err(400, 'uid required')
+  const list = cleanSupplements(body.supplements)
+  const cur = await readPlan(a, uid)
+  const pre = cur.exists ? 'currentDocument.updateTime=' + encodeURIComponent(cur.updateTime) : 'currentDocument.exists=false'
+  const { r, body: res } = await jsonFetch(`${planUrl(uid)}?updateMask.fieldPaths=supplements&updateMask.fieldPaths=rev&${pre}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + a.idToken },
+    body: JSON.stringify({ fields: { supplements: { stringValue: JSON.stringify(list) }, rev: { integerValue: String(cur.rev + 1) } } })
+  })
+  if (!r.ok) {
+    if (r.status === 400 && /FAILED_PRECONDITION/.test(res?.error?.status || '')) throw err(409, 'Bu arada başka bir değişiklik oldu — tekrar kaydet')
+    throw err(r.status, res?.error?.message || 'supplements write failed')
+  }
+  return { ok: true, supplements: list }
 }
 
 async function asCoach() {
@@ -732,6 +765,8 @@ export async function firebaseApi(path, init = {}) {
       if (!uid) throw err(400, 'uid required')
       return trackerExtras(await asCoach(), uid)
     }
+    case 'PUT /api/coach/supplements':
+      return coachPutSupplements(await asCoach(), body)
     case 'PUT /api/coach/targets':
       return coachPutTargets(await asCoach(), body)
     case 'PUT /api/coach/plan':

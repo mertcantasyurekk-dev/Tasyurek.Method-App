@@ -115,3 +115,13 @@ describe('measurements in the export', () => {
     expect(out.slice(out.indexOf('[N] '))).toContain('ölçüler: bel-göbek 85.8 | kalça 98 (2026-09-23)')
   })
 })
+
+describe('cardio log and supplements in the export', () => {
+  it('counts the cardio log and reports supplement adherence in [N]', () => {
+    const S3 = { ...S, cardio: { '2026-09-23': { items: [{ id: 'a', type: 'Walking', min: 30 }, { id: 'b', type: 'HIIT', min: 15 }] } },
+      coachSupplements: [{ id: 'g', label: 'Sabah', items: [{ id: 'd3', name: 'D3' }] }], supps: { '2026-09-22': { on: { d3: true } }, '2026-09-23': { on: { d3: true } } } }
+    const n = buildExport({ uid: 'U1', S: S3, today: TODAY }).split('[N] ')[1]
+    expect(n).toMatch(/kardiyo: 2 seans, 45 dk/)
+    expect(n).toMatch(/takviye uyumu: %29/)
+  })
+})

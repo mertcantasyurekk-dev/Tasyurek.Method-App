@@ -12,6 +12,7 @@ import { isWarmupRow } from './workout-model.js'
 import { totalsOf, kcalOf } from './nutrition-core.js'
 import { macroTargetFor } from './nutrition.js'
 import { entriesOf as measurementsOf, measureLine, lastInPeriod } from './measurements.js'
+import { cardioOf, suppAdherence } from './daily.js'
 
 const num = v => { if (v === null || v === undefined || v === '') return NaN; const n = parseFloat(String(v).replace(',', '.')); return isNaN(n) ? NaN : n }
 const fmt = (n, d = 1) => (n === null || n === undefined || isNaN(n) ? '—' : String(Math.round(n * 10 ** d) / 10 ** d))
@@ -77,6 +78,8 @@ function periodStats(S, dates) {
   const st = { logged: 0, w: [], sleep: [], water: [], pS: 0, cS: 0, fS: 0, macroDays: 0, pctSum: 0, pctCnt: 0, cardioSessions: 0, cardioMin: 0, notes: [] }
   const bw = new Map((S.bodyweight || []).filter(b => b && isDate(b.d)).map(b => [b.d, num(b.w)]))
   for (const d of dates) {
+    // the cardio log (Ana sayfa → Kardiyo ekle)
+    for (const c of cardioOf(S, d)) { st.cardioSessions++; st.cardioMin += Number(c.min) || 0 }
     const day = S.nutrition?.[d]
     const w = bw.get(d)
     const tot = totalsOf(day)
@@ -192,6 +195,10 @@ export function buildExport({ uid, name, email, S, note = '', goal = '', today =
     L.push('top setler:')
     const tl = keys.filter(k => exMap[k]).map(k => setLine(exMap[k], true))
     if (tl.length) tl.forEach(x => L.push(x)); else L.push('  —')
+    if (withNotes) {
+      const sa = suppAdherence(S, dates[6], 7, { countToday: true })   // a finished week: all seven days
+      if (sa !== null) L.push(`takviye uyumu: %${sa} (işaretlenen / plandaki, 7 gün)`)
+    }
     if (withNotes) { L.push('günlük notlar:'); if (st.notes.length) st.notes.forEach(x => L.push('  ' + x)); else L.push('  —') }
   }
   block('N-1', N1, stN1, wkN1, exN1, false)

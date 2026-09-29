@@ -31,6 +31,7 @@ const memberView = m => {
   const S = JSON.parse(JSON.stringify(m.state || {}))
   if (m.plan) applyPlan(S, m.plan)
   if (m.targets) S.coachTargets = m.targets
+  if (m.supplements) S.coachSupplements = m.supplements
   return S
 }
 
@@ -89,13 +90,15 @@ export default function CoachWeekly({ uid, info, m, onChanged }) {
   const applyMacros = () => {
     const mac = preview.res.macro
     const cur = m.targets || {}
-    const next = { training: mac.training || cur.training || null, rest: mac.rest || cur.rest || null, water: cur.water ?? null, sleep: cur.sleep ?? null }
+    // Only the macro sets change: water, sleep and the weekly targets stay as they are.
+    const next = { ...cur, training: mac.training || cur.training || null, rest: mac.rest || cur.rest || null }
+    delete next.updatedAt
     confirmSheet({
       title: 'Makroları uygula',
       message: <>
         <div>Antrenman günü: {setLine(cur.training)} → <b>{setLine(next.training)}</b></div>
         <div style={{ marginTop: 6 }}>Dinlenme günü: {setLine(cur.rest)} → <b>{setLine(next.rest)}</b></div>
-        <div className="small dim" style={{ marginTop: 8 }}>{info.name} yeni hedefleri hemen görür. Su ve uyku hedefi değişmez.</div>
+        <div className="small dim" style={{ marginTop: 8 }}>{info.name} yeni hedefleri hemen görür. Su, uyku ve haftalık hedefler değişmez.</div>
       </>,
       confirmText: 'Uygula',
       onConfirm: async () => {

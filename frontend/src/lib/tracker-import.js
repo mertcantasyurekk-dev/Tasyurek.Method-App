@@ -21,6 +21,7 @@ import { bpFromName, mergeImport } from './import-csv.js'
 import { uid } from './format.js'
 import { totalsOf } from './nutrition.js'
 import { fromTracker as measurementsFromTracker } from './measurements.js'
+import { dailyFromTracker } from './daily.js'
 
 const clean = s => String(s ?? '').toLowerCase().replace(/\s+/g, ' ').trim()
 let byName = null
@@ -142,7 +143,8 @@ export function convertTracker(payload, existingCustom = [], { stableIds = false
   const customEx = fresh.filter(c => used.has(c.id))
 
   const measurements = measurementsFromTracker(payload?.measurements)
-  return { routines, workouts, bodyweight, nutrition, measurements, customEx, linked, programName: program?.name || '' }
+  const { cardio, supps } = dailyFromTracker(payload)
+  return { routines, workouts, bodyweight, nutrition, measurements, cardio, supps, customEx, linked, programName: program?.name || '' }
 }
 
 /**
@@ -184,8 +186,14 @@ export function applyTrackerImport(S, conv, { now = new Date().toISOString() } =
     meas++
   }
   if (meas) S.measurements.sort((a, b) => (a.d < b.d ? -1 : 1))
+  // Cardio and supplement ticks: days this app has none of its own for.
+  let cardioDays = 0
+  S.cardio = S.cardio && typeof S.cardio === 'object' ? S.cardio : {}
+  for (const [d, day] of Object.entries(conv.cardio || {})) { if (!S.cardio[d]) { S.cardio[d] = { ...day, items: day.items.map(x => ({ ...x })) }; cardioDays++ } }
+  S.supps = S.supps && typeof S.supps === 'object' ? S.supps : {}
+  for (const [d, day] of Object.entries(conv.supps || {})) if (!S.supps[d]) S.supps[d] = { on: { ...day.on }, _ts: day._ts }
   S.trackerImport = { at: now, ...(first ? {} : { firstAt: S.trackerImport.firstAt || S.trackerImport.at }) }
-  return { routines, workouts: w.added, workoutsSkipped: w.skipped, weights: b.added, days, measurements: meas, customs: conv.customEx.length }
+  return { routines, workouts: w.added, workoutsSkipped: w.skipped, weights: b.added, days, measurements: meas, cardioDays, customs: conv.customEx.length }
 }
 
 // Days of the week for n routines in order, when the tracker had no weekday for them (openGym keys:

@@ -223,7 +223,8 @@ export function TargetsForm({ initial, onSave, busy, saveLabel = 'Hedefleri kayd
   const [t, setT] = useState(() => ({
     training: { p: pick(initial?.training, 'p'), c: pick(initial?.training, 'c'), f: pick(initial?.training, 'f') },
     rest: { p: pick(initial?.rest, 'p'), c: pick(initial?.rest, 'c'), f: pick(initial?.rest, 'f') },
-    water: initial?.water ?? null, sleep: initial?.sleep ?? null
+    water: initial?.water ?? null, sleep: initial?.sleep ?? null,
+    workoutsPerWeek: initial?.workoutsPerWeek ?? null, cardioSessionsPerWeek: initial?.cardioSessionsPerWeek ?? null, cardioMinutesPerWeek: initial?.cardioMinutesPerWeek ?? null
   }))
   const setM = (which, k, v) => setT(o => ({ ...o, [which]: { ...o[which], [k]: v } }))
   const kc = s => kcalOf({ p: s.p || 0, c: s.c || 0, f: s.f || 0 })
@@ -242,6 +243,11 @@ export function TargetsForm({ initial, onSave, busy, saveLabel = 'Hedefleri kayd
     <Section title="Günlük">
       <Row icon="drop" title="Su"><NumberField nullable value={t.water} onChange={v => setT(o => ({ ...o, water: v }))} placeholder="—" className="nut-num sm" aria-label="Su (L)" /><span className="small dim" style={{ marginInlineStart: 6 }}>L</span></Row>
       <Row icon="moon" title="Uyku"><NumberField nullable value={t.sleep} onChange={v => setT(o => ({ ...o, sleep: v }))} placeholder="—" className="nut-num sm" aria-label="Uyku (saat)" /><span className="small dim" style={{ marginInlineStart: 6 }}>sa</span></Row>
+    </Section>
+    <Section title="Haftalık" footer={'Üyenin ana sayfasındaki „Bu hafta" kartında ilerleme olarak görünür.'}>
+      <Row icon="dumbbell" title="Antrenman"><NumberField nullable value={t.workoutsPerWeek} onChange={v => setT(o => ({ ...o, workoutsPerWeek: v }))} placeholder="—" className="nut-num sm" aria-label="Haftalık antrenman" /><span className="small dim" style={{ marginInlineStart: 6 }}>seans</span></Row>
+      <Row icon="figureRun" title="Kardiyo"><NumberField nullable value={t.cardioSessionsPerWeek} onChange={v => setT(o => ({ ...o, cardioSessionsPerWeek: v }))} placeholder="—" className="nut-num sm" aria-label="Haftalık kardiyo seansı" /><span className="small dim" style={{ marginInlineStart: 6 }}>seans</span></Row>
+      <Row icon="timer" title="Kardiyo süresi"><NumberField nullable value={t.cardioMinutesPerWeek} onChange={v => setT(o => ({ ...o, cardioMinutesPerWeek: v }))} placeholder="—" className="nut-num sm" aria-label="Haftalık kardiyo dakikası" /><span className="small dim" style={{ marginInlineStart: 6 }}>dk</span></Row>
     </Section>
     <Button variant="primary" icon="checkCircle" disabled={busy} onClick={save}>{busy ? 'Kaydediliyor…' : saveLabel}</Button>
   </>
