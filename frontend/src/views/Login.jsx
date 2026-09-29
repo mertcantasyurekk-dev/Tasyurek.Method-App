@@ -101,11 +101,11 @@ export default function Login() {
   // in is e-mail + password. No passkeys, no sign-up, no device codes, no guest profile.
   if (FIREBASE) return (
     <div className="narrow" style={wrap}>
-      <div style={{ display: 'flex', justifyContent: 'center' }}>
-        <img src="icon-180.png" alt="" width="84" height="84" style={{ borderRadius: 20 }} />
-      </div>
-      <h1 style={{ fontSize: 30, fontWeight: 700, letterSpacing: '-.02em', margin: '16px 0 4px' }}>Taşyürek Method</h1>
-      <div className="muted" style={{ marginBottom: 34 }}>Mertcan Taşyürek · Personal Training & Online Coaching</div>
+      {/* The coach's lockup: the TM mark over the name. Two renderings so the name reads on
+          either theme (off-white on dark, navy on light); the mark is gold on both. */}
+      <img src={document.documentElement.dataset.theme === 'light' ? 'lockup-light.png' : 'lockup-dark.png'}
+        alt="Taşyürek Method" style={{ width: 230, maxWidth: '70%', height: 'auto', margin: '0 auto' }} />
+      <div className="muted small" style={{ margin: '18px 0 34px' }}>Mertcan Taşyürek · Personal Training & Online Coaching</div>
       <Button variant="primary" icon="key" onClick={() => openPasswordSignIn()}>{t('Sign in with password')}</Button>
       <div className="dim small" style={{ marginTop: 26, lineHeight: 1.5 }}>Koçunun verdiği e-posta ve şifreyle giriş yap.</div>
     </div>
