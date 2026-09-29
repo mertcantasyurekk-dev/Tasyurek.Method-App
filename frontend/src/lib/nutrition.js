@@ -1,39 +1,31 @@
-// Taşyürek Method: daily nutrition — macros, water, sleep — and the coach's targets for them.
-//
-// S.nutrition = { 'YYYY-MM-DD': { p, c, f, water, sleep, type, _ts } }
-//   p c f   the day's totals in grams of protein / carbs / fat — what the coach looks at. What was
-//           eaten meal by meal is deliberately not kept: a day is a handful of numbers (~60 bytes),
-//           so a member's document holds years of it.
-//   type    'training' | 'rest' when the member picked the day type by hand; absent = automatic
-// A day written before this shape carries `items` ([{ p, c, f }]); it is read as their sum and
-// becomes plain totals the first time the day is edited.
-// Body weight stays where openGym keeps it (S.bodyweight).
+// Taşyürek Method: daily nutrition — what the member eats this week, the day's totals, water,
+// sleep — and the coach's targets for them. The day model, the weekly seal and sync live in
+// lib/nutrition-core.js; this file adds the edits and the targets.
 //
 // Targets: S.coachTargets (from the coach's plan, read-only for a member) or, for the coach's own
 // training, S.myTargets. { training: { p, c, f }, rest: { p, c, f }, water, sleep }.
+import { uid } from './format.js'
 import { effectiveRoutineIds } from './history.js'
+import { kcalOf, totalsOf, mergeNutrition, compactNutrition, sealDay, weekStartIso, todayLocal } from './nutrition-core.js'
 
-export const kcalOf = ({ p = 0, c = 0, f = 0 } = {}) => Math.round(p * 4 + c * 4 + f * 9)
+export { kcalOf, totalsOf, mergeNutrition, compactNutrition, sealDay, weekStartIso }
 const n = v => { const x = parseFloat(String(v ?? '').replace(',', '.')); return isFinite(x) && x > 0 ? x : 0 }
+const signed = v => { const x = parseFloat(String(v ?? '').replace(',', '.')); return isFinite(x) ? x : 0 }
 const r1 = v => Math.round(v * 10) / 10
+
+export const MEALS = [['b', 'Kahvaltı'], ['l', 'Öğle'], ['d', 'Akşam'], ['s', 'Ara öğün']]
+export const mealByHour = (h = new Date().getHours()) => (h < 11 ? 'b' : h < 16 ? 'l' : h < 21 ? 'd' : 's')
 
 export function dayOf(S, iso) {
   const d = S?.nutrition?.[iso]
   return d && typeof d === 'object' ? d : null
 }
 
-const hasTotals = day => !!day && ['p', 'c', 'f'].some(k => day[k] != null)
-
-export function totalsOf(day) {
-  const t = { p: 0, c: 0, f: 0 }
-  if (hasTotals(day)) { t.p = n(day.p); t.c = n(day.c); t.f = n(day.f) }
-  else for (const it of Array.isArray(day?.items) ? day.items : []) { t.p += n(it?.p); t.c += n(it?.c); t.f += n(it?.f) }
-  t.p = r1(t.p); t.c = r1(t.c); t.f = r1(t.f)
-  return { ...t, kcal: kcalOf(t) }
-}
-
 // Whether anything was entered for the day (totals, water or sleep).
 export const loggedDay = day => !!day && (totalsOf(day).kcal > 0 || n(day.water) > 0 || n(day.sleep) > 0)
+
+// A day of an earlier week: its meals are gone, only the totals remain.
+export const isClosedDay = (S, iso, today = todayLocal()) => iso < weekStartIso(today, S?.weekStart === 0 ? 0 : 1)
 
 export const targetsOf = S => S?.coachTargets || S?.myTargets || null
 
@@ -66,27 +58,49 @@ export function macroTargetFor(S, iso) {
 function ensureDay(s, iso) {
   if (!s.nutrition || typeof s.nutrition !== 'object') s.nutrition = {}
   const d = s.nutrition[iso] && typeof s.nutrition[iso] === 'object' ? s.nutrition[iso] : {}
-  // An old day kept per item: fold it into totals on first edit.
-  if (!hasTotals(d) && Array.isArray(d.items)) { const t = totalsOf(d); d.p = t.p; d.c = t.c; d.f = t.f }
-  delete d.items; delete d.del
   s.nutrition[iso] = d
   return d
 }
 const stamp = (d, now) => { d._ts = now; return d }
-const clampG = (v, max) => Math.min(max, r1(n(v)))
 
-// Add what was just eaten to the day. Returns false when there was nothing to add.
-export function addToDay(s, iso, { p, c, f }, now = Date.now()) {
-  if (!(n(p) || n(c) || n(f))) return false
+function pushItem(s, iso, item, now) {
   const d = stamp(ensureDay(s, iso), now)
-  d.p = clampG(n(d.p) + n(p), 2000); d.c = clampG(n(d.c) + n(c), 3000); d.f = clampG(n(d.f) + n(f), 1000)
+  d.items = Array.isArray(d.items) ? d.items : []
+  const it = { id: 'n' + uid(), ...item, t: now }
+  d.items.push(it)
+  return it
+}
+
+// A food from the list, in some amount. `macros` are already computed for that amount.
+export function addFood(s, iso, { meal, fid, name, qty, unit, p, c, f }, now = Date.now()) {
+  const m = { p: r1(n(p)), c: r1(n(c)), f: r1(n(f)) }
+  if (!(m.p || m.c || m.f)) return null
+  return pushItem(s, iso, { m: meal || mealByHour(), ...(fid ? { fid } : {}), n: String(name || '').slice(0, 80), q: r1(n(qty)) || 1, u: unit || null, ...m }, now)
+}
+
+// Just grams, no food: "Hızlı ekleme".
+export function addToDay(s, iso, { p, c, f, meal }, now = Date.now()) {
+  const m = { p: r1(n(p)), c: r1(n(c)), f: r1(n(f)) }
+  if (!(m.p || m.c || m.f)) return false
+  pushItem(s, iso, { m: meal || mealByHour(), n: 'Hızlı ekleme', ...m }, now)
   return true
 }
-// Put the day's totals right (a typo, a forgotten meal).
-export function setTotals(s, iso, { p, c, f }, now = Date.now()) {
+
+export function removeItem(s, iso, id, now = Date.now()) {
   const d = stamp(ensureDay(s, iso), now)
-  d.p = clampG(p, 2000); d.c = clampG(c, 3000); d.f = clampG(f, 1000)
+  d.items = (Array.isArray(d.items) ? d.items : []).filter(it => it.id !== id)
+  d.del = [...new Set([...(Array.isArray(d.del) ? d.del : []), id])]
 }
+
+// "The day was really this much": a correction item for the difference, so it syncs like any other.
+export function setTotals(s, iso, { p, c, f }, now = Date.now()) {
+  const cur = totalsOf(dayOf(s, iso))
+  const dp = r1(n(p) - cur.p), dc = r1(n(c) - cur.c), df = r1(n(f) - cur.f)
+  if (!dp && !dc && !df) return false
+  pushItem(s, iso, { n: 'Düzeltme', x: 1, p: dp, c: dc, f: df }, now)
+  return true
+}
+
 export function setWater(s, iso, liters, now = Date.now()) {
   stamp(ensureDay(s, iso), now).water = Math.max(0, Math.min(15, Math.round(n(liters) * 4) / 4))
 }
@@ -98,17 +112,11 @@ export function setDayType(s, iso, type, now = Date.now()) {
   if (type === 'training' || type === 'rest') d.type = type; else delete d.type
 }
 
-/* ---- sync: two copies of the log become one ---- */
-
-// Per day, the copy edited last. A day is a few numbers the member keeps correcting as a whole,
-// so the newest version of it is the right one.
-export function mergeNutrition(a, b) {
-  const A = a && typeof a === 'object' ? a : {}, B = b && typeof b === 'object' ? b : {}
-  const out = {}
-  for (const iso of new Set([...Object.keys(A), ...Object.keys(B)])) {
-    const x = A[iso], y = B[iso]
-    const pick = !x ? y : !y ? x : (Number(y._ts) || 0) > (Number(x._ts) || 0) ? y : x
-    out[iso] = JSON.parse(JSON.stringify(pick))
-  }
-  return out
+// The day's meals, in order, for the day view.
+export function mealsOf(day) {
+  const items = Array.isArray(day?.items) ? day.items : []
+  return MEALS.map(([k, label]) => ({ key: k, label, items: items.filter(it => !it.x && (it.m || 's') === k) }))
+    .concat([{ key: 'x', label: 'Düzeltmeler', items: items.filter(it => it.x) }])
+    .filter(g => g.items.length)
 }
+export const signedSum = items => items.reduce((a, it) => ({ p: a.p + signed(it.p), c: a.c + signed(it.c), f: a.f + signed(it.f) }), { p: 0, c: 0, f: 0 })

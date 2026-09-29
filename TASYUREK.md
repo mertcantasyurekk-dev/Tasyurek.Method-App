@@ -55,15 +55,24 @@ Admin hesabında Ana sayfa ve Ayarlar'da **Koç paneli** (`views/CoachPanel.jsx`
 
 ## Beslenme (günlük takip)
 
-Ana sayfadaki kart (`components/NutritionCard.jsx`, stiller `components/nutrition.css`, model `lib/nutrition.js`):
-kcal halkası (makro payları renkli), protein/karbonhidrat/yağ çubukları hedefe göre "kaldı / fazla / hedefte",
-su (çeyrek litre adımlarla), gün geçişi (geriye dönük giriş), "Makro ekle" (gramlar günün toplamına eklenir) ve
-"Günü düzenle" (toplamı doğrudan düzeltme, uyku, gün tipi). Kcal = P×4 + K×4 + Y×9.
-- **Sadece günün toplamı tutulur**, öğün öğün ne yendiği tutulmaz (koçun kararı: önemli olan günlük kcal ve makro
-  dağılımı). Veri: `S.nutrition[tarih] = { p, c, f, water, sleep, type, _ts }`, günde ~60 bayt, yılda ~25 KB.
-  Kilo openGym'in `bodyweight` kaydında kalır. Senkronda gün bazında son düzenlenen kopya kazanır
-  (`mergeNutrition`, `sync-merge.js`'e tek satırla bağlı). Eski kalemli günler (`items`) toplam olarak okunur ve
-  ilk düzenlemede toplama çevrilir.
+Ana sayfadaki kart (`components/NutritionCard.jsx`, stiller `components/nutrition.css`): kcal halkası (makro
+payları renkli), protein/karbonhidrat/yağ çubukları hedefe göre "kaldı / fazla / hedefte", su (çeyrek litre),
+gün geçişi (geriye dönük giriş), **Yemek ekle** ve **Günün öğünleri**. Kcal = P×4 + K×4 + Y×9.
+
+**Yemek ekleme (FatSecret benzeri)** — `components/FoodSheet.jsx`, `lib/foods.js`: öğün seçimi (saate göre
+otomatik), Türkçe karakter duyarsız arama, "bu hafta eklediklerin", gram ya da porsiyon miktarı, peş peşe ekleme,
+listede olmayan yemeği ortak listeye kaydetme, "sadece makro gir". Liste: tracker'ın 118 yemeği
+(`src/data/foods-tr.json`, pencere açılınca yüklenir, ~3 KB sıkıştırılmış) + ortak liste
+`sharedData/customFoods` (eski tracker'la **aynı belge ve biçim**, iki uygulama aynı listeyi paylaşır).
+
+**Haftalık mühür — ne saklanır** (`lib/nutrition-core.js`): gün = `{ p, c, f, items, del, water, sleep, type,
+sealedAt, _ts }`. Toplam = taban (p/c/f) + kalemler. İçinde bulunulan hafta öğün kalemlerini tutar; önceki
+haftaların günleri mühürlenir: kalemler toplama katlanır ve silinir. Adaptör bunu Firestore'a **her yazışta ve her
+okuyuşta** uygular (`compactNutrition`), yani arka planda eski haftalara ait "ne yendiği" hiç durmaz; sadece günlük
+kcal ve makro kalır (yılda ~25 KB). "Toplamı düzelt" bir düzeltme kalemi (`x: 1`, eksi olabilir) ekler.
+Senkron (`mergeNutrition`): bu haftanın kalemleri iki cihazdan birleşir, silinen geri gelmez; mühürlü gün
+mühür öncesi kalemleri tekrar saymaz, mühürden sonra eklenenleri korur.
+- Kilo openGym'in `bodyweight` kaydında kalır.
 - Hedefler: koç panelinde üye detayı → **Beslenme** → antrenman ve dinlenme günü makro setleri, su, uyku.
   `coachplan/{uid}.targets` alanına yazılır (programla birbirini ezmez); üyede `S.coachTargets`, değiştiremez.
   Hedef yoksa form eski tracker'ın `customMacroTargets`/`targets` değerleriyle dolu açılır. Sınırlar: P ≤ 500,

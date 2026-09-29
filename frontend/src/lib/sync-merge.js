@@ -66,7 +66,7 @@
  */
 import { beatsWeight } from './exercises.js'
 import { bestWeightForEntry } from './history.js'
-import { mergeNutrition } from './nutrition.js'   // Taşyürek: the daily nutrition log
+import { mergeNutrition } from './nutrition-core.js'   // Taşyürek: the daily nutrition log
 import { convertStateUnit, convertBodyWeight } from './units.js'
 
 const clone = o => JSON.parse(JSON.stringify(o))

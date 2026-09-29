@@ -362,3 +362,50 @@ describe('coach targets', () => {
     expect(one.targets).toBeNull()
   })
 })
+
+describe('the weekly seal on the way to Firestore', () => {
+  it('stores past weeks as day totals only; this week keeps its meals', async () => {
+    await post('/api/login/password', { name: 'uye@x.com', password: 'dogru' })
+    const today = new Date(); const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const old = new Date(today); old.setDate(old.getDate() - 14)
+    const nutrition = {
+      [iso(old)]: { items: [{ id: 'a', n: 'Köfte', p: 30, c: 5, f: 20, t: 1 }, { id: 'b', n: 'Pilav', p: 4, c: 40, f: 5, t: 2 }], _ts: 2 },
+      [iso(today)]: { items: [{ id: 'c', n: 'Yulaf', p: 10, c: 60, f: 6, t: 3 }], _ts: 3 }
+    }
+    await put({ state: { workouts: [], nutrition }, baseRev: 0 })
+    const stored = fb.docs.get('ogstate/U1').fields.state.stringValue
+    expect(stored).not.toMatch(/Köfte|Pilav/)
+    expect(stored).toMatch(/Yulaf/)
+    const back = (await firebaseApi('/api/data')).state.nutrition
+    expect(back[iso(old)]).toMatchObject({ p: 34, c: 45, f: 25 })
+    expect(back[iso(old)].items).toBeUndefined()
+  })
+})
+
+describe('shared foods', () => {
+  const str = v => ({ stringValue: v })
+  it('reads the tracker\'s list, adds in the same shape, never twice by name', async () => {
+    fb.docs.set('sharedData/customFoods', { fields: { items: { arrayValue: { values: [
+      { mapValue: { fields: { id: str('x1'), name: str('Yemekhane mercimek'), unit: str('portion'), portionLabel: str('1 kase'), kcal: { integerValue: '150' }, protein: { integerValue: '9' }, carbs: { doubleValue: 20.5 }, fat: { integerValue: '4' } } } }
+    ] } } }, updateTime: 'f0' })
+    await post('/api/login/password', { name: 'uye@x.com', password: 'dogru' })
+    const { foods } = await firebaseApi('/api/foods')
+    expect(foods).toEqual([{ id: 'x1', name: 'Yemekhane mercimek', unit: 'portion', portionLabel: '1 kase', kcal: 150, protein: 9, carbs: 20.5, fat: 4 }])
+    const add = f => firebaseApi('/api/foods', { method: 'POST', body: JSON.stringify({ food: f }) })
+    const r = await add({ name: 'Protein bar X', unit: '100g', protein: '32', carbs: 40, fat: '12,5' })
+    expect(r.food).toMatchObject({ name: 'Protein bar X', unit: '100g', protein: 32, carbs: 40, fat: 12.5, kcal: 401 })
+    expect((await add({ name: 'yemekhane MERCİMEK', protein: 1, carbs: 1, fat: 1 })).existed).toBe(true)
+    expect((await firebaseApi('/api/foods')).foods.map(f => f.name)).toEqual(['Yemekhane mercimek', 'Protein bar X'])
+    await expect(add({ name: '', protein: 1, carbs: 1, fat: 1 })).rejects.toMatchObject({ status: 400 })
+    await expect(add({ name: 'Boş', protein: 0, carbs: 0, fat: 0 })).rejects.toMatchObject({ status: 400 })
+  })
+  it('retries when someone else added a food at the same moment', async () => {
+    await post('/api/login/password', { name: 'uye@x.com', password: 'dogru' })
+    fb.docs.set('sharedData/customFoods', { fields: { items: { arrayValue: { values: [] } } }, updateTime: 'f0' })
+    fb.setBeforeWrite((docs, path) => {
+      docs.set(path, { fields: { items: { arrayValue: { values: [{ mapValue: { fields: { name: str('Başkası'), unit: str('100g'), protein: { integerValue: '1' }, carbs: { integerValue: '1' }, fat: { integerValue: '1' } } } }] } } }, updateTime: fb.bump() })
+    })
+    await firebaseApi('/api/foods', { method: 'POST', body: JSON.stringify({ food: { name: 'Benim', protein: 5, carbs: 5, fat: 5 } }) })
+    expect((await firebaseApi('/api/foods')).foods.map(f => f.name)).toEqual(['Başkası', 'Benim'])
+  })
+})

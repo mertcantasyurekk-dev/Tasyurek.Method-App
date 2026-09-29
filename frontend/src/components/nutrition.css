@@ -70,3 +70,8 @@ input.num.nut-num {
 input.num.nut-num.sm { width: 70px; }
 input.num.nut-num::placeholder { color: var(--label-3); font-weight: 400; }
 input.num.nut-num:focus { box-shadow: inset 0 0 0 2px var(--acc); }
+
+/* the food sheet */
+.linkbtn { appearance: none; border: 0; background: none; font: inherit; color: var(--acc); cursor: pointer; display: inline-flex; align-items: center; gap: 4px; padding: 4px 0; }
+.nut-meal-h { display: flex; justify-content: space-between; align-items: baseline; }
+.nut-meal-h small { color: var(--label-2); font-weight: 400; }

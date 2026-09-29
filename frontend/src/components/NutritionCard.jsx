@@ -7,7 +7,8 @@ import { useUI } from '../store/useUI.js'
 import { todayISO, isoOf, fmtDate, fmtNum } from '../lib/format.js'
 import { useCoached } from '../lib/coached.js'
 import { cleanTargets } from '../lib/firebase-api.js'
-import { dayOf, totalsOf, targetsOf, macroTargetFor, kcalOf, addToDay, setTotals, setWater, setSleep, setDayType } from '../lib/nutrition.js'
+import { dayOf, totalsOf, targetsOf, macroTargetFor, kcalOf, addToDay, setTotals, setWater, setSleep, setDayType, removeItem, mealsOf, signedSum, isClosedDay } from '../lib/nutrition.js'
+import { foodSheet } from './FoodSheet.jsx'
 import Icon from './Icon.jsx'
 import { Button, NumberField, Section, Row, Segmented } from './ui.jsx'
 import './nutrition.css'
@@ -118,8 +119,8 @@ export default function NutritionCard() {
     </div>
 
     <div className="nut-act">
-      <Button size="sm" variant="tinted" icon="plus" onClick={() => addMacroSheet(iso)}>Makro ekle</Button>
-      <Button size="sm" icon="pencil" onClick={() => dayEditSheet(iso)}>Günü düzenle</Button>
+      <Button size="sm" variant="tinted" icon="plus" onClick={() => foodSheet(iso)}>Yemek ekle</Button>
+      <Button size="sm" icon="fork" onClick={() => dayEditSheet(iso)}>Günün öğünleri</Button>
     </div>
     {!T && (coached
       ? <div className="nut-note">Koçun henüz beslenme hedefini belirlemedi. Girdiklerin yine de kaydedilir.</div>
@@ -163,7 +164,7 @@ function AddMacro({ iso, close }) {
 }
 export const addMacroSheet = iso => ui().openSheet(close => <AddMacro iso={iso} close={close} />)
 
-// The day as a whole: its totals set outright, sleep, and the day type.
+// The day: its meals this week (each item can be removed), the totals put right, sleep, day type.
 function DayEdit({ iso, close }) {
   const S = useStore(s => s.S)
   const update = useStore(s => s.update)
@@ -171,16 +172,37 @@ function DayEdit({ iso, close }) {
   const cur = totalsOf(day)
   const target = macroTargetFor(S, iso)
   const T = targetsOf(S)
+  const meals = mealsOf(day)
+  const closed = isClosedDay(S, iso)
+  const [fix, setFix] = useState(false)
   const [v, setV] = useState({ p: cur.p || null, c: cur.c || null, f: cur.f || null })
   const kcal = kcalOf({ p: v.p || 0, c: v.c || 0, f: v.f || 0 })
-  const save = () => { update(s => setTotals(s, iso, { p: v.p || 0, c: v.c || 0, f: v.f || 0 })); close(); toast('Gün güncellendi') }
+  const saveFix = () => { update(s => setTotals(s, iso, { p: v.p || 0, c: v.c || 0, f: v.f || 0 })); setFix(false); toast('Toplam düzeltildi') }
+  const itemLine = it => `${fmtNum(kcalOf({ p: Math.max(0, it.p), c: Math.max(0, it.c), f: Math.max(0, it.f) }))} kcal · P ${fmtNum(it.p)} · K ${fmtNum(it.c)} · Y ${fmtNum(it.f)}`
+  const qtyLine = it => (it.x ? '' : it.u === 'g' ? `${fmtNum(it.q)} g · ` : it.u ? `${fmtNum(it.q)} × ${it.u} · ` : '')
   return <>
-    <h3>{dayLabel(iso)} · günün toplamı</h3>
-    <div className="muted small" style={{ marginBottom: 12 }}>Gün sonundaki toplam makroların. Yanlış girdiysen buradan düzelt.</div>
+    <h3>{dayLabel(iso)} · öğünler</h3>
+    <div className="muted small" style={{ marginBottom: 12 }}>{fmtNum(cur.kcal)} kcal{target ? ` / ${fmtNum(target.kcal)}` : ''} · P {fmtNum(cur.p)} · K {fmtNum(cur.c)} · Y {fmtNum(cur.f)}</div>
     {target?.type && <><Segmented value={target.type} onChange={x => update(s => setDayType(s, iso, x))}
       options={[{ value: 'training', label: 'Antrenman günü' }, { value: 'rest', label: 'Dinlenme günü' }]} /><div style={{ height: 12 }} /></>}
-    <MacroFields v={v} set={setV} />
-    <div className="row between" style={{ margin: '4px 2px 14px' }}><span className="muted">Toplam</span><b>{fmtNum(kcal)} kcal{target ? ` / ${fmtNum(target.kcal)}` : ''}</b></div>
+    {closed && !meals.length && <div className="card small muted" style={{ marginBottom: 12 }}>Bu hafta kapandı. Öğün detayı saklanmaz, sadece günün toplamı durur.</div>}
+    {meals.map(g => {
+      const sum = signedSum(g.items)
+      return <Section key={g.key} title={<span className="nut-meal-h">{g.label} <small>{fmtNum(kcalOf({ p: Math.max(0, sum.p), c: Math.max(0, sum.c), f: Math.max(0, sum.f) }))} kcal</small></span>}>
+        {g.items.map(it => <Row key={it.id} title={it.n || 'Hızlı ekleme'} subtitle={qtyLine(it) + itemLine(it)}>
+          <button className="iconbtn" aria-label={'Sil: ' + (it.n || '')} onClick={() => update(s => removeItem(s, iso, it.id))}><Icon name="trash" /></button>
+        </Row>)}
+      </Section>
+    })}
+    {!closed && !meals.length && <div className="empty small">Bu gün için henüz yemek eklemedin.</div>}
+    <Button variant="primary" icon="plus" onClick={() => { close(); foodSheet(iso) }}>Yemek ekle</Button>
+    <div style={{ height: 14 }} />
+    {!fix ? <Section><Row icon="pencil" title="Günün toplamını düzelt" subtitle="Yanlış ya da eksik girdiysen" accessory="chevron" onClick={() => setFix(true)} /></Section> : <>
+      <MacroFields v={v} set={setV} />
+      <div className="row between" style={{ margin: '4px 2px 10px' }}><span className="muted">Yeni toplam</span><b>{fmtNum(kcal)} kcal</b></div>
+      <Button icon="checkCircle" onClick={saveFix}>Toplamı kaydet</Button>
+      <div style={{ height: 14 }} />
+    </>}
     <Section title="Uyku">
       <Row icon="moon" title="Uyku" subtitle={T?.sleep ? `Hedef ${fmtNum(T.sleep)} saat` : undefined}>
         <button className="iconbtn" aria-label="Uyku azalt" onClick={() => update(s => setSleep(s, iso, (day?.sleep || 0) - 0.5))}><Icon name="minus" /></button>
@@ -188,9 +210,7 @@ function DayEdit({ iso, close }) {
         <button className="iconbtn" aria-label="Uyku artır" onClick={() => update(s => setSleep(s, iso, (day?.sleep || (T?.sleep ? T.sleep - 0.5 : 7)) + 0.5))}><Icon name="plus" /></button>
       </Row>
     </Section>
-    <Button variant="primary" icon="checkCircle" onClick={save}>Kaydet</Button>
-    <div style={{ height: 8 }} />
-    <Button variant="ghost" className="dim" onClick={close}>Vazgeç</Button>
+    <Button variant="ghost" className="dim" onClick={close}>Kapat</Button>
   </>
 }
 export const dayEditSheet = iso => ui().openSheet(close => <DayEdit iso={iso} close={close} />)

@@ -11,6 +11,8 @@
 // The tracker's own userdata/{uid} is never read or written here, so the two apps cannot overwrite
 // each other's data while both are in use.
 
+import { compactNutrition } from './nutrition-core.js'   // the weekly seal: meals of past weeks are never stored
+
 export const FIREBASE = import.meta.env?.VITE_FIREBASE === '1'
 
 const CFG = {
@@ -95,6 +97,8 @@ async function readDoc(a) {
   }
   const rev = Number(f.rev?.integerValue || 0)
   if (state) state._rev = rev
+  // Meals of an earlier week are not kept: fold them into the day's totals (lib/nutrition-core.js).
+  if (state) compactNutrition(state)
   // A profile that never picked a language is a Turkish one here (openGym's default is English).
   if (state && !state.lang) state.lang = 'tr'
   // Profiles saved before the brand accent existed carry openGym's green: move them to the gold
@@ -181,6 +185,7 @@ async function putData(a, body) {
   }
   const nextRev = cur.rev + 1
   delete state._rev
+  compactNutrition(state)   // what reaches Firestore holds past weeks as day totals only
   const text = JSON.stringify(state)
   if (text.length > MAX_STATE_BYTES) throw err(413, 'profile too large for one document')
 
@@ -374,6 +379,70 @@ async function coachPutTargets(a, body) {
   return { ok: true, rev: cur.rev + 1, targets }
 }
 
+/* ------------------------------------------------------------ shared foods -------------------- */
+// sharedData/customFoods = { items: [ { id, name, unit: '100g' | 'portion', portionLabel, kcal,
+// protein, carbs, fat } ] } — the list the old tracker already keeps, so both apps share it.
+
+const fromFs = v => {
+  if (!v || typeof v !== 'object') return null
+  if ('stringValue' in v) return v.stringValue
+  if ('integerValue' in v) return Number(v.integerValue)
+  if ('doubleValue' in v) return Number(v.doubleValue)
+  if ('booleanValue' in v) return v.booleanValue
+  if ('nullValue' in v) return null
+  if ('arrayValue' in v) return (v.arrayValue.values || []).map(fromFs)
+  if ('mapValue' in v) return Object.fromEntries(Object.entries(v.mapValue.fields || {}).map(([k, x]) => [k, fromFs(x)]))
+  return null
+}
+const toFs = v => {
+  if (v === null || v === undefined) return { nullValue: null }
+  if (typeof v === 'string') return { stringValue: v }
+  if (typeof v === 'boolean') return { booleanValue: v }
+  if (typeof v === 'number') return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v }
+  if (Array.isArray(v)) return { arrayValue: { values: v.map(toFs) } }
+  return { mapValue: { fields: Object.fromEntries(Object.entries(v).map(([k, x]) => [k, toFs(x)])) } }
+}
+const FOODS_URL = () => `${DOCS()}/sharedData/customFoods`
+
+async function readFoods(a) {
+  const { r, body } = await jsonFetch(FOODS_URL(), { headers: { Authorization: 'Bearer ' + a.idToken } })
+  if (r.status === 404) return { exists: false, items: [], updateTime: null }
+  if (!r.ok) throw err(r.status, body?.error?.message || 'foods read failed')
+  const items = fromFs(body.fields?.items)
+  return { exists: true, items: Array.isArray(items) ? items.filter(x => x && x.name) : [], updateTime: body.updateTime }
+}
+
+export function cleanFood(f) {
+  const name = String(f?.name || '').trim().slice(0, 80)
+  const g = (v, max) => { const x = parseFloat(String(v ?? '').replace(',', '.')); return isFinite(x) && x >= 0 && x <= max ? Math.round(x * 10) / 10 : null }
+  const unit = f?.unit === 'portion' ? 'portion' : '100g'
+  const out = { id: 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, unit, protein: g(f?.protein, 200), carbs: g(f?.carbs, 300), fat: g(f?.fat, 150) }
+  if (!name) throw err(400, 'Yemeğin adı gerekli')
+  if (out.protein == null || out.carbs == null || out.fat == null || !(out.protein + out.carbs + out.fat)) throw err(400, 'Protein, karbonhidrat ve yağ değerlerini gir')
+  if (unit === 'portion') out.portionLabel = String(f?.portionLabel || '1 porsiyon').trim().slice(0, 40) || '1 porsiyon'
+  out.kcal = Math.round(out.protein * 4 + out.carbs * 4 + out.fat * 9)
+  return out
+}
+
+async function addSharedFood(a, food) {
+  const clean = cleanFood(food)
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const cur = await readFoods(a)
+    const same = cur.items.find(x => x.name.toLocaleLowerCase('tr') === clean.name.toLocaleLowerCase('tr'))
+    if (same) return { ok: true, food: same, existed: true }
+    const pre = cur.exists ? 'currentDocument.updateTime=' + encodeURIComponent(cur.updateTime) : 'currentDocument.exists=false'
+    const { r, body: res } = await jsonFetch(`${FOODS_URL()}?updateMask.fieldPaths=items&${pre}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + a.idToken },
+      body: JSON.stringify({ fields: { items: toFs([...cur.items, clean]) } })
+    })
+    if (r.ok) return { ok: true, food: clean, existed: false }
+    if (!(r.status === 400 && /FAILED_PRECONDITION/.test(res?.error?.status || ''))) throw err(r.status, res?.error?.message || 'foods write failed')
+    // someone else added a food meanwhile: read again and retry
+  }
+  throw err(409, 'Liste şu an meşgul, tekrar dene')
+}
+
 async function asCoach() {
   const a = await idToken()
   if (!isAdmin(a)) throw err(403, 'coach only')
@@ -458,6 +527,10 @@ export async function firebaseApi(path, init = {}) {
       return coachPutTargets(await asCoach(), body)
     case 'PUT /api/coach/plan':
       return coachPutPlan(await asCoach(), body)
+    case 'GET /api/foods':
+      return { foods: (await readFoods(await idToken())).items }
+    case 'POST /api/foods':
+      return addSharedFood(await idToken(), body?.food)
     case 'POST /api/activity':
       return { ok: true }   // the "who is training now" heartbeat has nobody to tell here
     default:
