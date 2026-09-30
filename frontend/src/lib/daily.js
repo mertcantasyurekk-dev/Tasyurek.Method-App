@@ -88,7 +88,8 @@ function isCardioOnly(S, w) {
 
 /* ---- supplements ---- */
 
-export const supplementPlan = S => (Array.isArray(S?.coachSupplements) ? S.coachSupplements : []).filter(g => g && Array.isArray(g.items) && g.items.length)
+// The coach's list for a member; the coach's own list (S.mySupplements) for the coach.
+export const supplementPlan = S => (Array.isArray(S?.coachSupplements) ? S.coachSupplements : Array.isArray(S?.mySupplements) ? S.mySupplements : []).filter(g => g && Array.isArray(g.items) && g.items.length)
 export const suppItems = S => supplementPlan(S).flatMap(g => g.items.filter(i => i && i.id))
 export const takenOn = (S, iso) => (S?.supps?.[iso]?.on && typeof S.supps[iso].on === 'object' ? S.supps[iso].on : {})
 

@@ -35,6 +35,8 @@ import { importFromTracker } from '../components/TrackerImport.jsx'
 import { useCoached } from '../lib/coached.js'
 import { openLicenses } from '../components/Licenses.jsx'
 import { reviewsSheet, reviewsOf } from '../components/CoachMessages.jsx'
+import { myTargetsSheet } from '../components/NutritionCard.jsx'
+import { mySupplementsSheet } from '../components/SupplementsEditor.jsx'
 
 export default function Settings() {
   const coached = useCoached()   // Taşyürek
@@ -308,6 +310,8 @@ export default function Settings() {
       </> : user && FIREBASE ? <>
         {/* Taşyürek: accounts live in Firebase Auth and are made by the coach — sign out is all there is. */}
         {user.admin && <Row icon="wrench" iconTint="var(--acc)" title="Koç paneli" subtitle="Üyeler ve programları" accessory="chevron" onClick={() => nav('/panel')} />}
+        {user.admin && <Row icon="target" iconTint="var(--acc)" title="Hedeflerim" subtitle="Makrolar, su, uyku, haftalık antrenman ve kardiyo" accessory="chevron" onClick={myTargetsSheet} />}
+        {user.admin && <Row icon="checkCircle" iconTint="var(--acc)" title="Takviyelerim" subtitle={S.mySupplements?.length ? `${S.mySupplements.reduce((n, g) => n + g.items.length, 0)} takviye` : 'Liste yok'} accessory="chevron" onClick={mySupplementsSheet} />}
         {!user.admin && reviewsOf(S).length > 0 && <Row icon="envelope" iconTint="var(--acc)" title="Koçunun değerlendirmeleri" value={String(reviewsOf(S).length)} accessory="chevron" onClick={reviewsSheet} />}
         <Row icon="signOut" iconTint="var(--red)" title={t('Sign out')} danger onClick={signOutHere} />
       </> : user ? <>

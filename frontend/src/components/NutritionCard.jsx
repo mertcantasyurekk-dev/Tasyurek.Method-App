@@ -122,9 +122,9 @@ export default function NutritionCard() {
       <Button size="sm" variant="tinted" icon="plus" onClick={() => foodSheet(iso)}>Yemek ekle</Button>
       <Button size="sm" icon="fork" onClick={() => dayEditSheet(iso)}>Günün öğünleri</Button>
     </div>
-    {!T && (coached
-      ? <div className="nut-note">Koçun henüz beslenme hedefini belirlemedi. Girdiklerin yine de kaydedilir.</div>
-      : <div className="nut-note"><a href="#" onClick={e => { e.preventDefault(); myTargetsSheet() }}>Kendi hedeflerini belirle</a></div>)}
+    {coached
+      ? !T && <div className="nut-note">Koçun henüz beslenme hedefini belirlemedi. Girdiklerin yine de kaydedilir.</div>
+      : <div className="nut-note"><a href="#" onClick={e => { e.preventDefault(); myTargetsSheet() }}>{T ? 'Hedeflerimi düzenle' : 'Kendi hedeflerini belirle'}</a></div>}
   </div>
 }
 

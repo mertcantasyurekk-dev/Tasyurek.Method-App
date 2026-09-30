@@ -87,6 +87,9 @@ Koç panelinde üye detayı (`views/CoachWeekly.jsx`, biçimler `lib/coach360.js
   son iki gün protein, dünkü kayıt/isabet, uyku, kardiyo açığı, kayıt serisi, ölçüm zamanı, takviye uyumu). En ağır
   kural kazanır, cümle güne göre döner, gün içinde sabit kalır, kapatılabilir. Kilo yönü hakkında yorum yapmaz (hedef koçta).
 - 360°: kardiyo satırı kardiyo kaydını da sayar; [N]'de `takviye uyumu: %…`.
+- **Koçun kendi hedefleri ve takviyeleri** (kendi antrenmanı için): Ayarlar → **Hedeflerim** (`S.myTargets`: makro setleri,
+  su, uyku, haftalık) ve **Takviyelerim** (`S.mySupplements`); beslenme kartındaki "Hedeflerimi düzenle" bağlantısı da
+  hep durur. Takviye düzenleyicisi ortak bileşen (`components/SupplementsEditor.jsx`), koç panelinde üyeler için de o.
 - Tracker'dan: günlük kardiyo, takviye işaretleri (üye aktarımı); takviye listesi ve haftalık hedefler (koçun program aktarımı).
 
 ## Vücut ölçüleri

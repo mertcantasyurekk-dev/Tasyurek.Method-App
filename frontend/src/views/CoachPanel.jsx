@@ -21,7 +21,7 @@ import { loadTrackerPlan, oneMemberTransferSheet, everyoneTransferSheet } from '
 import { backupSheet } from '../components/Backup.jsx'
 import { FIELDS as MEAS_FIELDS, changesOf, latestOf as lastMeasurement, daysSinceLast as measAgo } from '../lib/measurements.js'
 import { weekProgress, suppAdherence } from '../lib/daily.js'
-import { TextField } from '../components/ui.jsx'
+import SupplementsEditor from '../components/SupplementsEditor.jsx'
 import { totalsOf, kcalOf } from '../lib/nutrition.js'
 
 const toast = m => useUI.getState().toast(m)
@@ -344,14 +344,12 @@ function MeasurementsSection({ st }) {
 
 /* ------------------------------------------------------------------ supplements ----------------- */
 
-const newId = p => p + Math.random().toString(36).slice(2, 8)
-
 function SupplementsSection({ uid, name, m, onSaved }) {
   const [list, setList] = useState(null)       // editing copy
   const [busy, setBusy] = useState(false)
   const cur = m.supplements || []
   const edit = list !== null
-  const start = () => setList(JSON.parse(JSON.stringify(cur.length ? cur : [{ id: newId('g'), label: 'Sabah', items: [] }])))
+  const start = () => setList(cur)
   const fromTracker = async () => {
     try {
       const x = await api('/api/coach/tracker-extra?uid=' + encodeURIComponent(uid))
@@ -359,12 +357,11 @@ function SupplementsSection({ uid, name, m, onSaved }) {
       setList(x.supplements)
     } catch (e) { toast(e.message) }
   }
-  const save = async () => {
+  const save = async l => {
     setBusy(true)
-    try { await api('/api/coach/supplements', { method: 'PUT', body: JSON.stringify({ uid, supplements: list }) }); setList(null); toast(`${name} için takviyeler kaydedildi`); onSaved && onSaved() }
+    try { await api('/api/coach/supplements', { method: 'PUT', body: JSON.stringify({ uid, supplements: l }) }); setList(null); toast(`${name} için takviyeler kaydedildi`); onSaved && onSaved() }
     catch (e) { toast(e.data?.error || e.message) } finally { setBusy(false) }
   }
-  const setG = (gi, f) => setList(l => l.map((g, i) => (i === gi ? f(g) : g)))
   if (!edit) return <Section title="Takviyeler" footer={cur.length ? 'Üye ana sayfasında her gün işaretler.' : 'Liste yok: üyede takviye kartı görünmez.'}>
     {cur.map(g => <Row key={g.id} icon="checkCircle" title={g.label} subtitle={g.items.map(i => i.name + (i.dose ? ` (${i.dose})` : '')).join(' · ')} />)}
     <div style={{ padding: '10px 14px 14px' }} className="row" >
@@ -373,23 +370,9 @@ function SupplementsSection({ uid, name, m, onSaved }) {
       {!cur.length && <Button size="sm" icon="download" onClick={fromTracker}>Tracker'dan al</Button>}
     </div>
   </Section>
-  return <Section title="Takviyeler — düzenle" footer="Boş satırlar kaydedilmez. Grubu silmek için içindeki her şeyi sil.">
+  return <Section title="Takviyeler — düzenle">
     <div style={{ padding: '10px 14px 14px' }}>
-      {list.map((g, gi) => <div key={g.id} className="card" style={{ marginBottom: 10 }}>
-        <TextField value={g.label} onChange={e => setG(gi, x => ({ ...x, label: e.target.value }))} placeholder="Grup (ör. Sabah — kahvaltıyla)" maxLength={80} />
-        {g.items.map((it, ii) => <div key={it.id} className="row" style={{ gap: 6, marginTop: 8 }}>
-          <TextField value={it.name} onChange={e => setG(gi, x => ({ ...x, items: x.items.map((y, j) => (j === ii ? { ...y, name: e.target.value } : y)) }))} placeholder="Ad" maxLength={80} style={{ flex: 2 }} />
-          <TextField value={it.dose} onChange={e => setG(gi, x => ({ ...x, items: x.items.map((y, j) => (j === ii ? { ...y, dose: e.target.value } : y)) }))} placeholder="Doz" maxLength={120} style={{ flex: 2 }} />
-          <button className="iconbtn" aria-label="Sil" onClick={() => setG(gi, x => ({ ...x, items: x.items.filter((_, j) => j !== ii) }))}><Icon name="trash" /></button>
-        </div>)}
-        <div style={{ height: 8 }} />
-        <Button size="sm" variant="ghost" icon="plus" onClick={() => setG(gi, x => ({ ...x, items: [...x.items, { id: newId('i'), name: '', dose: '' }] }))}>Takviye ekle</Button>
-      </div>)}
-      <Button size="sm" variant="ghost" icon="plus" onClick={() => setList(l => [...l, { id: newId('g'), label: '', items: [] }])}>Grup ekle</Button>
-      <div style={{ height: 10 }} />
-      <Button variant="primary" icon="checkCircle" disabled={busy} onClick={save}>{busy ? 'Kaydediliyor…' : 'Kaydet'}</Button>
-      <div style={{ height: 8 }} />
-      <Button variant="ghost" className="dim" onClick={() => setList(null)}>{t('Cancel')}</Button>
+      <SupplementsEditor initial={list} busy={busy} onCancel={() => setList(null)} onSave={l => save(l)} />
     </div>
   </Section>
 }
