@@ -82,3 +82,29 @@ input.num.nut-num:focus { box-shadow: inset 0 0 0 2px var(--acc); }
   background: var(--surface-2); border-radius: var(--r-sm); padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .meas-cell b { font-size: 17px; font-variant-numeric: tabular-nums; }
 .meas-cell:active { opacity: .7; }
+
+/* "Bu hafta": three activity rings and the week day by day. Rings scale with the card's width. */
+.wk-rings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.wk-ring { display: flex; flex-direction: column; align-items: center; min-width: 0; }
+.wk-ring-svg { position: relative; width: 100%; max-width: 112px; aspect-ratio: 1; }
+.wk-ring-svg svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.wk-trk { stroke: var(--surface-2); }
+.wk-fill { transition: stroke-dashoffset .8s cubic-bezier(.2,.8,.2,1), stroke .3s; }
+.wk-ring-c { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.05; }
+.wk-ring-c b { font-size: clamp(17px, 6vw, 24px); font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.wk-ring-c span { font-size: 11px; color: var(--label-2); margin-top: 2px; white-space: nowrap; }
+.wk-ring-l.done { color: var(--green); }
+.wk-ring-l { font-size: 12px; font-weight: 600; margin-top: 6px; text-align: center; }
+
+.wk-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; margin-top: 16px; }
+.wk-day { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; }
+.wk-mark { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; background: var(--surface-2); }
+.wk-mark.on { background: var(--acc); color: var(--on-acc); }
+.wk-col { width: 100%; max-width: 22px; height: 38px; border-radius: 5px; background: var(--surface-2); display: flex; align-items: flex-end; overflow: hidden; }
+.wk-col > div { width: 100%; background: var(--teal); border-radius: 5px; transition: height .8s cubic-bezier(.2,.8,.2,1); }
+.wk-min { font-size: 10px; color: var(--label-2); height: 12px; font-variant-numeric: tabular-nums; }
+.wk-dl { font-size: 11px; color: var(--label-2); font-weight: 500; }
+.wk-day.today .wk-dl { color: var(--acc); font-weight: 700; }
+.wk-day.today .wk-col { box-shadow: inset 0 0 0 1.5px var(--acc); }
+.wk-day.future { opacity: .45; }
+@media (prefers-reduced-motion: reduce) { .wk-fill, .wk-col > div { transition: none; } }

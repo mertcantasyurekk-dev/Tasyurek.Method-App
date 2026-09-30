@@ -78,7 +78,9 @@ Koç panelinde üye detayı (`views/CoachWeekly.jsx`, biçimler `lib/coach360.js
   "HIIT"…; Türkçe etiketlerle gösterilir). Senkron kalem bazında. Antrenman içindeki openGym kardiyo hareketleri de sayılır;
   sadece kardiyodan oluşan antrenman "antrenman" sayılmaz.
 - **Haftalık hedefler** (koç, hedef formunda "Haftalık"): `coachTargets.workoutsPerWeek`, `cardioSessionsPerWeek`,
-  `cardioMinutesPerWeek`. Ana sayfada "Bu hafta" kartı (ilerleme çubukları + kardiyo ekle + bugünün kardiyosu).
+  `cardioMinutesPerWeek`. Ana sayfada "Bu hafta" kartı: üç halka (antrenman altın, kardiyo mavi, süre turkuaz; hedef
+  tamamlanınca yeşil ve etikette ✓, açılışta dolma animasyonu), 7 günlük şerit (antrenman işareti + kardiyo dakikası
+  sütunu, bugün vurgulu), kardiyo ekle, bugünün kardiyosu. Halkalar kart genişliğiyle ölçeklenir (en çok 112 px).
   "Makroları uygula" artık diğer hedefleri (su, uyku, haftalık) korur.
 - **Takviyeler**: koç üye detayında gruplu liste kurar (tracker'ın `customSupplements` biçimi, `coachplan.supplements`);
   "Tracker'dan al" ile gelir. Üye Ana sayfada her gün işaretler: `S.supps[tarih] = { on: { itemId: true }, _ts }`

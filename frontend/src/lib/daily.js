@@ -68,15 +68,18 @@ export function weekProgress(S, today) {
   const days = weekDays(S, today)
   const T = S?.coachTargets || S?.myTargets || {}
   let workouts = 0, sessions = 0, minutes = 0
+  const perDay = []
   for (const d of days) {
-    workouts += (S?.workouts || []).filter(w => w?.d === d && !isCardioOnly(S, w)).length
+    const dw = (S?.workouts || []).filter(w => w?.d === d && !isCardioOnly(S, w)).length
     const log = cardioOf(S, d)
-    sessions += log.length; minutes += log.reduce((a, x) => a + num(x.min), 0)
-    const wc = workoutCardio(S, d); sessions += wc.sessions; minutes += wc.min
+    const wc = workoutCardio(S, d)
+    const ds = log.length + wc.sessions, dm = log.reduce((a, x) => a + num(x.min), 0) + wc.min
+    workouts += dw; sessions += ds; minutes += dm
+    perDay.push({ d, workouts: dw, sessions: ds, minutes: Math.round(dm), today: d === today, future: d > today })
   }
   const daysLeft = days.filter(d => d > today).length
   return {
-    days, daysLeft, workouts, sessions, minutes: Math.round(minutes),
+    days, perDay, daysLeft, workouts, sessions, minutes: Math.round(minutes),
     targets: { workouts: num(T.workoutsPerWeek) || 0, sessions: num(T.cardioSessionsPerWeek) || 0, minutes: num(T.cardioMinutesPerWeek) || 0 }
   }
 }

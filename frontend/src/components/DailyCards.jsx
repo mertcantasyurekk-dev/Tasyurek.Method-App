@@ -1,6 +1,6 @@
 // Taşyürek Method: three Home cards — the message of the day (lib/daily-message.js), this week
 // against the coach's weekly targets with the cardio log, and today's supplements (lib/daily.js).
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useStore } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
 import { todayISO, fmtNum, isoOf } from '../lib/format.js'
@@ -36,15 +36,45 @@ export function DailyMessageCard() {
 
 /* ---- this week + cardio ---- */
 
-function Bar({ label, have, want, unit = '' }) {
-  const pct = want ? Math.min(100, (have / want) * 100) : 0
-  const done = want && have >= want
-  return <div className="nut-row">
-    <div className="nut-row-t">
-      <span className="nm">{label}</span>
-      <span className="vl"><b>{fmtNum(have)}</b>{want ? ` / ${fmtNum(want)}` : ''}{unit}</span>
+// One activity ring: fills toward the weekly target, turns green with a tick when it is met.
+function WeekRing({ label, have, want, unit, color, shown }) {
+  const R = 40, C = 2 * Math.PI * R
+  const pct = want ? Math.min(1, have / want) : 0
+  const done = want > 0 && have >= want
+  const stroke = done ? 'var(--green)' : color
+  return <div className="wk-ring" role="img" aria-label={`${label}: ${have}${want ? ' / ' + want : ''}${unit || ''}`}>
+    <div className="wk-ring-svg">
+      <svg viewBox="0 0 100 100">
+        <circle cx="50" cy="50" r={R} fill="none" strokeWidth="10" className="wk-trk" />
+        {want > 0 && <circle cx="50" cy="50" r={R} fill="none" strokeWidth="10" strokeLinecap="round" className="wk-fill"
+          stroke={stroke} strokeDasharray={C} strokeDashoffset={C * (1 - (shown ? pct : 0))} />}
+      </svg>
+      <div className="wk-ring-c">
+        <b>{fmtNum(have)}</b>
+        <span>{want ? `/ ${fmtNum(want)}${unit || ''}` : unit ? unit.trim() : 'hedef yok'}</span>
+      </div>
     </div>
-    {want > 0 && <div className="nut-bar"><div style={{ width: pct + '%', background: done ? 'var(--green)' : 'var(--acc)' }} /></div>}
+    <div className={'wk-ring-l' + (done ? ' done' : '')}>{label}{done ? ' ✓' : ''}</div>
+  </div>
+}
+
+const DAY_SHORT = ['Pz', 'Pt', 'Sa', 'Ça', 'Pe', 'Cu', 'Ct']
+
+// The week day by day: a mark for a training session, a column for cardio minutes.
+function WeekStrip({ perDay, shown }) {
+  const top = Math.max(30, ...perDay.map(x => x.minutes))
+  return <div className="wk-strip">
+    {perDay.map(x => {
+      const dow = new Date(x.d + 'T12:00:00').getDay()
+      const h = x.minutes ? Math.max(10, (x.minutes / top) * 100) : 0
+      return <div key={x.d} className={'wk-day' + (x.today ? ' today' : '') + (x.future ? ' future' : '')}
+        title={`${DAY_SHORT[dow]}: ${x.workouts ? x.workouts + ' antrenman' : 'antrenman yok'}${x.minutes ? `, ${x.minutes} dk kardiyo` : ''}`}>
+        <span className={'wk-mark' + (x.workouts ? ' on' : '')}>{x.workouts ? <Icon name="dumbbell" /> : null}</span>
+        <div className="wk-col"><div style={{ height: (shown ? h : 0) + '%' }} /></div>
+        <span className="wk-min">{x.minutes ? x.minutes + '′' : ''}</span>
+        <span className="wk-dl">{DAY_SHORT[dow]}</span>
+      </div>
+    })}
   </div>
 }
 
@@ -55,24 +85,28 @@ export function WeekCard() {
   const w = weekProgress(S, today)
   const t = w.targets
   const todays = cardioOf(S, today)
+  // Fill from empty once on arrival, so the rings read as progress rather than a static figure.
+  const [shown, setShown] = useState(false)
+  useEffect(() => { const id = requestAnimationFrame(() => setShown(true)); return () => cancelAnimationFrame(id) }, [])
   return <div className="card nut">
-    <div className="row between" style={{ marginBottom: 10 }}>
+    <div className="row between" style={{ marginBottom: 12 }}>
       <div><h2 style={{ margin: 0 }}>Bu hafta</h2><div className="small muted">{w.daysLeft ? `${w.daysLeft} gün kaldı` : 'Haftanın son günü'}</div></div>
       <Button size="sm" variant="tinted" icon="plus" onClick={() => cardioSheet()}>Kardiyo ekle</Button>
     </div>
-    <div className="nut-m">
-      <Bar label="Antrenman" have={w.workouts} want={t.workouts} />
-      <Bar label="Kardiyo seansı" have={w.sessions} want={t.sessions} />
-      <Bar label="Kardiyo süresi" have={w.minutes} want={t.minutes} unit=" dk" />
+    <div className="wk-rings">
+      <WeekRing label="Antrenman" have={w.workouts} want={t.workouts} color="var(--acc)" shown={shown} />
+      <WeekRing label="Kardiyo" have={w.sessions} want={t.sessions} color="var(--blue)" shown={shown} />
+      <WeekRing label="Kardiyo süresi" have={w.minutes} want={t.minutes} unit=" dk" color="var(--teal)" shown={shown} />
     </div>
+    <WeekStrip perDay={w.perDay} shown={shown} />
     {todays.length > 0 && <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--sep-op)' }}>
-      <div className="small muted" style={{ marginBottom: 4 }}>Bugün</div>
+      <div className="small muted" style={{ marginBottom: 4 }}>Bugünkü kardiyo</div>
       {todays.map(c => <div key={c.id} className="row between" style={{ padding: '3px 0' }}>
         <span>{cardioLabel(c.type)} · <b>{c.min} dk</b></span>
         <button className="iconbtn" aria-label={'Sil: ' + cardioLabel(c.type)} onClick={() => update(s => removeCardio(s, today, c.id))}><Icon name="trash" /></button>
       </div>)}
     </div>}
-    {!t.workouts && !t.sessions && !t.minutes && <div className="nut-note">Koçun haftalık hedef belirlediğinde ilerlemen burada görünecek.</div>}
+    {!t.workouts && !t.sessions && !t.minutes && <div className="nut-note">Koçun haftalık hedef belirlediğinde halkalar hedefe göre dolacak.</div>}
   </div>
 }
 

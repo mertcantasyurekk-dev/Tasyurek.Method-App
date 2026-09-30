@@ -19,6 +19,8 @@ describe('cardio and the week', () => {
     S.customEx = [{ id: 'cx', n: 'Koşu bandı', bp: 'cardio', custom: true }]
     const w = weekProgress(S, TUE)
     expect(w).toMatchObject({ workouts: 1, sessions: 3, minutes: 65, targets: { workouts: 4, sessions: 3, minutes: 120 }, daysLeft: 5 })
+    expect(w.perDay.map(x => [x.d.slice(8), x.workouts, x.sessions, x.minutes, x.today])).toEqual([
+      ['28', 1, 1, 20, false], ['29', 0, 2, 45, true], ['30', 0, 0, 0, false], ['01', 0, 0, 0, false], ['02', 0, 0, 0, false], ['03', 0, 0, 0, false], ['04', 0, 0, 0, false]])
     removeCardio(S, TUE, a.id, 3)
     expect(cardioOf(S, TUE)).toEqual([])
     expect(cardioLabel('Incline Walk')).toBe('Eğimli yürüyüş')
