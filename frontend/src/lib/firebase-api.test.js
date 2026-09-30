@@ -287,25 +287,35 @@ describe('coach plan', () => {
     await expect(putPlan('', PLAN)).rejects.toMatchObject({ status: 400 })
   })
 
-  it('lists members (not the coach) with a one-line summary', async () => {
+  it('lists members (not the coach) from their summaries; an old document is summarised once', async () => {
     const str = v => ({ stringValue: v })
     fb.docs.set('userdata/U1', { fields: { displayName: str('Seda'), email: str('uye@x.com') }, updateTime: 'x' })
     fb.docs.set('userdata/U2', { fields: { displayName: str('Ali'), email: str('iki@x.com') }, updateTime: 'x' })
     fb.docs.set('userdata/ADM', { fields: { displayName: str('Mertcan'), email: str('mertcan.tasyurekk@gmail.com') }, updateTime: 'x' })
-    const today = new Date().toISOString().slice(0, 10)
-    fb.docs.set('ogstate/U1', { fields: { state: str(JSON.stringify({ workouts: [{ d: '2026-01-01' }, { d: today }], bodyweight: [{ d: '2026-01-01', w: 80 }, { d: today, w: 78.5 }] })), rev: { integerValue: '4' } }, updateTime: 'y' })
+    const today = new Date(); const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+    // an old document without a summary
+    fb.docs.set('ogstate/U1', { fields: { state: str(JSON.stringify({ workouts: [{ d: '2026-01-01' }, { d: iso }], bodyweight: [{ d: iso, w: 78.5 }] })), rev: { integerValue: '4' } }, updateTime: 'y' })
     await asCoach()
     await putPlan('U2', PLAN)
     const { members } = await firebaseApi('/api/coach/members')
     expect(members.map(m => m.name)).toEqual(['Ali', 'Seda'])
     const seda = members.find(m => m.uid === 'U1')
-    expect(seda).toMatchObject({ joined: true, lastWorkout: today, workouts: 2, workouts7: 1, lastWeight: 78.5, planAt: null })
+    expect(seda).toMatchObject({ joined: true, planAt: null })
+    expect(seda.summary).toMatchObject({ lastWorkout: iso, lastWeight: 78.5 })
     const ali = members.find(m => m.uid === 'U2')
-    expect(ali).toMatchObject({ joined: false, workouts: 0, lastWorkout: null })
+    expect(ali).toMatchObject({ joined: false, summary: null })
     expect(ali.planAt).toBeTruthy()
     const one = await firebaseApi('/api/coach/member?uid=U1')
     expect(one.state.workouts).toHaveLength(2)
+    expect(one.info).toEqual({ name: 'Seda', email: 'uye@x.com' })
     expect(one.plan).toBeNull()
+  })
+  it('a member\'s save writes the summary next to the state', async () => {
+    await post('/api/logout', {})
+    await post('/api/login/password', { name: 'uye@x.com', password: 'dogru' })
+    await put({ state: { workouts: [{ d: '2026-09-28', entries: [] }], bodyweight: [{ d: '2026-09-28', w: 61 }] }, baseRev: 0 })
+    const sum = JSON.parse(fb.docs.get('ogstate/U1').fields.summary.stringValue)
+    expect(sum).toMatchObject({ v: 1, lastWorkout: '2026-09-28', lastWeight: 61 })
   })
 })
 

@@ -94,6 +94,21 @@ Koç panelinde üye detayı (`views/CoachWeekly.jsx`, biçimler `lib/coach360.js
   hep durur. Takviye düzenleyicisi ortak bileşen (`components/SupplementsEditor.jsx`), koç panelinde üyeler için de o.
 - Tracker'dan: günlük kardiyo, takviye işaretleri (üye aktarımı); takviye listesi ve haftalık hedefler (koçun program aktarımı).
 
+## Koç paneli: üye özeti ve "Dikkat gerekenler"
+
+`lib/member-summary.js`. Üye her kaydettiğinde adaptör `ogstate/{uid}.summary` alanına ~1 KB özet yazar (son 21 gün,
+gün gün: antrenman, kardiyo dk, kcal, protein, tartı; son antrenman/tartı/kayıt/ölçüm tarihleri). Panel listesi sadece
+özetleri okur (`runQuery` + `select`), üyelerin tam verisini değil — testte 3 üyede ~880 KB yerine 3 KB. Özeti olmayan eski
+belge bir kez tam veriden özetlenir. Hesaplar panelin açıldığı güne göre yapılır (`statsOf`).
+**Dikkat gerekenler** (`attentionOf`, önem sırasıyla): kırmızı — X gündür kayıt yok (≥3), haftalık hedefe yetişemiyor;
+turuncu — hafta sıkışık, protein düşük (son 3 kayıtlı gün ort. < hedefin %85'i), beslenme kaydı seyrek (≤3/7),
+X gündür tartılmadı (≥4), program atanmamış; gri — ölçüm ≥10 gündür yok, uygulamayı açmadı.
+Üye detayı artık tüm listeyi indirmez (`/api/coach/member` adı/e-postayı da döndürür).
+
+**Günün notu** motive edici tonda yeniden yazıldı (önce çabayı gör, rakamla somutla, açığı fırsat olarak çerçevele,
+eylemle bitir); yeni olumlu kurallar: hafta temposunda (`week-on-track`), kardiyo yarıyı geçti (`cardio-progress`).
+"Hafta geride" ikiye ayrıldı: her kalan gün gerekiyorsa acil (`week-behind`), biri eksikse nazik (`week-pace`).
+
 ## Vücut ölçüleri
 
 `lib/measurements.js`, Ana sayfa kartı `components/MeasurementsCard.jsx`. Tracker'ın 10 alanı ve anahtarları: omuz

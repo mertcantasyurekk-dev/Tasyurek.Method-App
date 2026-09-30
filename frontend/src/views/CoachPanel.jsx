@@ -21,6 +21,7 @@ import { loadTrackerPlan, oneMemberTransferSheet, everyoneTransferSheet } from '
 import { backupSheet } from '../components/Backup.jsx'
 import { FIELDS as MEAS_FIELDS, changesOf, latestOf as lastMeasurement, daysSinceLast as measAgo } from '../lib/measurements.js'
 import { weekProgress, suppAdherence } from '../lib/daily.js'
+import { buildSummary, statsOf, attentionOf, attentionScore } from '../lib/member-summary.js'
 import SupplementsEditor from '../components/SupplementsEditor.jsx'
 import { totalsOf, kcalOf } from '../lib/nutrition.js'
 
@@ -48,9 +49,29 @@ export function CoachPanel() {
   }
   useEffect(load, [])
 
-  const line = m => !m.joined ? 'Yeni uygulamayı henüz açmadı'
-    : m.lastWorkout ? `Son antrenman ${ago(m.lastWorkout)} · bu hafta ${m.workouts7}`
+  const today = todayISO()
+  const rows = (members || []).map(m => {
+    const stats = statsOf(m.summary, today)
+    const flags = attentionOf({ joined: m.joined, planAt: m.planAt, stats, targets: m.targets })
+    return { ...m, stats, flags, score: attentionScore(flags) }
+  })
+  const needs = rows.filter(r => r.flags.some(f => f.level >= 2)).sort((a, b) => b.score - a.score)
+  const line = r => !r.joined ? 'Yeni uygulamayı henüz açmadı'
+    : r.stats?.lastWorkout ? `Son antrenman ${ago(r.stats.lastWorkout)} · bu hafta ${r.stats.workoutsWeek}${r.targets?.workoutsPerWeek ? '/' + r.targets.workoutsPerWeek : ''}`
       : 'Henüz antrenman yok'
+  const flagColor = l => (l >= 3 ? 'var(--red)' : l === 2 ? 'var(--orange)' : 'var(--label-2)')
+  const item = (r, withFlags) => <div key={r.uid} className="item" {...tappable(() => nav('/panel/' + r.uid))}>
+    <span className="lrow-i" style={{ background: r.joined ? 'var(--acc)' : 'var(--surface-3)', color: r.joined ? 'var(--on-acc)' : undefined }}><Icon name="person" /></span>
+    <div className="grow" style={{ minWidth: 0 }}>
+      <div className="tt">{r.name}</div>
+      <div className="ss">{line(r)}</div>
+      {withFlags && r.flags.length > 0 && <div className="row" style={{ gap: 4, flexWrap: 'wrap', marginTop: 5 }}>
+        {r.flags.map(f => <span key={f.key} className="tag" style={{ color: flagColor(f.level), borderColor: flagColor(f.level), textTransform: 'none' }}>{f.text}</span>)}
+      </div>}
+    </div>
+    {!withFlags && !r.planAt && <span className="tag" style={{ color: 'var(--orange)', borderColor: 'var(--orange)', textTransform: 'none' }}>Program yok</span>}
+    <Icon name="chevronRight" className="chev" />
+  </div>
 
   return <>
     <div className="hdr">
@@ -58,23 +79,18 @@ export function CoachPanel() {
       <button className="iconbtn" onClick={load} aria-label="Yenile"><Icon name="reset" /></button>
     </div>
     {error && <div className="card small" style={{ color: 'var(--red)' }}>{error}</div>}
+    {warnings.map((w, i) => <div key={i} className="card small" style={{ color: 'var(--orange)' }}>{w} — bu bilgiler listede eksik görünür. Firestore kurallarını kontrol et.</div>)}
     {members && <div className="row" style={{ gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
       <Button size="sm" variant="tinted" icon="download" onClick={() => everyoneTransferSheet({ members, onDone: load })}>Tracker programlarını aktar</Button>
       <Button size="sm" icon="cloud" onClick={() => backupSheet({ members })}>Yedekler</Button>
     </div>}
-    {warnings.map((w, i) => <div key={i} className="card small" style={{ color: 'var(--orange)' }}>{w} — bu bilgiler listede eksik görünür. Firestore kurallarını kontrol et.</div>)}
-    {members && <div className="list">
-      {members.map(m => <div key={m.uid} className="item" {...tappable(() => nav('/panel/' + m.uid))}>
-        <span className="lrow-i" style={{ background: m.joined ? 'var(--acc)' : 'var(--surface-3)', color: m.joined ? 'var(--on-acc)' : undefined }}>
-          <Icon name="person" /></span>
-        <div className="grow" style={{ minWidth: 0 }}>
-          <div className="tt">{m.name}</div>
-          <div className="ss">{line(m)}</div>
-        </div>
-        {!m.planAt && <span className="tag" style={{ color: 'var(--orange)', borderColor: 'var(--orange)', textTransform: 'none' }}>Program yok</span>}
-        <Icon name="chevronRight" className="chev" />
-      </div>)}
-    </div>}
+    {members && <>
+      <h4 className="sec">{needs.length ? `Dikkat gerekenler (${needs.length})` : 'Dikkat gerekenler'}</h4>
+      {needs.length ? <div className="list">{needs.map(r => item(r, true))}</div>
+        : <div className="card small muted">Herkes yolunda görünüyor. 🎯</div>}
+      <h4 className="sec" style={{ marginTop: 18 }}>Tüm üyeler</h4>
+      <div className="list">{rows.map(r => item(r, false))}</div>
+    </>}
   </>
 }
 
@@ -108,9 +124,10 @@ export function CoachMember() {
   const [tp, setTp] = useState(null)       // the member's active tracker program, as a plan
   const load = () => {
     setError(null)
-    Promise.all([api('/api/coach/member?uid=' + encodeURIComponent(uid)), api('/api/coach/members')])
-      .then(([one, all]) => {
-        setM(one); setInfo(all.members.find(x => x.uid === uid) || { name: uid })
+    // One read for this member: their state, plan, targets and name — not the whole member list.
+    api('/api/coach/member?uid=' + encodeURIComponent(uid))
+      .then(one => {
+        setM(one); setInfo(one.info || { name: uid })
         loadTrackerPlan(uid, one.state?.customEx).then(setTp).catch(() => setTp(null))
       })
       .catch(e => setError(e.message || 'Yüklenemedi'))
@@ -154,7 +171,7 @@ export function CoachMember() {
 
     <Section title="Özet">
       <Row icon="calendar" title="Son antrenman" value={workouts[0] ? ago(workouts[0].d) : '—'} />
-      <Row icon="flame" title="Son 7 gün" value={`${info.workouts7 || 0} antrenman`} />
+      <Row icon="flame" title="Son 7 gün" value={`${statsOf(buildSummary(st))?.workouts7 || 0} antrenman`} />
       <Row icon="dumbbell" title="Toplam" value={`${workouts.length} antrenman`} />
       <Row icon="scale" title="Son kilo" value={bw[0] ? `${fmtNum(bw[0].w)} ${unit} · ${fmtDate(bw[0].d)}` : '—'} />
       <Row icon="figureRun" title="Bu hafta" value={(() => { const w = weekProgress({ ...st, coachTargets: m.targets || undefined }, todayISO()); return `${w.workouts}${w.targets.workouts ? '/' + w.targets.workouts : ''} antrenman · ${w.sessions} kardiyo, ${w.minutes} dk` })()} />
@@ -164,7 +181,7 @@ export function CoachMember() {
 
     <CoachWeekly uid={uid} info={info} m={m} onChanged={load} />
 
-    <Section title="Program" footer={m.plan ? `Son güncelleme: ${fmtDate(m.plan.updatedAt.slice(0, 10), true)}` : 'Bu üyeye henüz program atamadın. Üye şu an kendi aktardığı rutinleri görüyor.'}>
+    <Section title="Program" footer={m.plan ? `Son güncelleme: ${(m.plan.updatedAt ? fmtDate(m.plan.updatedAt.slice(0, 10), true) : '—')}` : 'Bu üyeye henüz program atamadın. Üye şu an kendi aktardığı rutinleri görüyor.'}>
       <div style={{ padding: '12px 14px' }}>
         {m.plan ? <PlanSummary plan={m.plan} S={S} />
           : st.routines?.length ? <div className="small muted">Üyenin kendi rutinleri: {st.routines.map(r => r.name).join(', ')}</div>
@@ -283,7 +300,7 @@ export function weekAverage(st, today = todayISO()) {
 function NutritionSection({ uid, name, m, st, onSaved }) {
   const T = m.targets
   const avg = weekAverage(st)
-  return <Section title="Beslenme" footer={T ? `Son güncelleme: ${fmtDate(T.updatedAt.slice(0, 10), true)}` : 'Henüz hedef yok. Üye girdiklerini yine de kaydeder.'}>
+  return <Section title="Beslenme" footer={T ? `Son güncelleme: ${(T.updatedAt ? fmtDate(T.updatedAt.slice(0, 10), true) : '—')}` : 'Henüz hedef yok. Üye girdiklerini yine de kaydeder.'}>
     <Row icon="barbell" title="Antrenman günü" subtitle={setLine(T?.training)} />
     <Row icon="moon" title="Dinlenme günü" subtitle={setLine(T?.rest)} />
     <Row icon="drop" title="Su · uyku" value={T ? `${T.water ? fmtNum(T.water) + ' L' : '—'} · ${T.sleep ? fmtNum(T.sleep) + ' sa' : '—'}` : '—'} />

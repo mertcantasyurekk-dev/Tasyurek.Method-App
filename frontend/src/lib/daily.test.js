@@ -50,6 +50,25 @@ describe('cardio and the week', () => {
 })
 
 describe('message of the day', () => {
+  it('celebrates a week on pace and cardio past halfway', () => {
+    const S = plan(); S.week = {}
+    S.workouts = [{ d: MON, entries: [] }]
+    expect(dailyMessage(S, TUE).key).toBe('week-on-track')              // 1/4 on Tuesday, 6 days left: on pace
+    const S2 = plan(); S2.week = {}; S2.coachTargets.workoutsPerWeek = 0
+    S2.cardio = { [MON]: { items: [{ id: 'a', min: 70 }] } }
+    expect(dailyMessage(S2, TUE).key).toBe('cardio-progress')
+  })
+  it('a slightly tight week nudges, but a real topic outranks it', () => {
+    const S = plan(); S.week = {}
+    expect(dailyMessage(S, '2026-10-01').key).toBe('week-behind')       // Thursday 0/4: every remaining day is needed
+    expect(dailyMessage(S, '2026-09-30').key).toBe('week-pace')         // Wednesday 0/4: 4 of 5 days, a nudge
+    S.nutrition = { '2026-09-29': { p: 100, c: 150, f: 50 }, '2026-09-28': { p: 100, c: 150, f: 50 } }
+    expect(dailyMessage(S, '2026-09-30').key).toBe('protein-low')       // …which a real topic outranks
+  })
+  it('keeps an upbeat voice: no scolding words', () => {
+    const S = plan(); S.nutrition = { [MON]: { p: 60, c: 100, f: 30 }, '2026-09-27': { p: 60, c: 100, f: 30 } }
+    for (const d of ['2026-09-29', '2026-09-30', '2026-10-01']) expect(dailyMessage(S, d).text).not.toMatch(/başarısız|kötü|yetersiz|maalesef|hata/i)
+  })
   it('a welcome with nothing to go on', () => {
     expect(dailyMessage({ workouts: [], nutrition: {} }, TUE, 'Seda Çelik').text).toMatch(/Hoş geldin, Seda/)
   })
@@ -62,7 +81,7 @@ describe('message of the day', () => {
   it('behind on the week, with the numbers and today\'s routine', () => {
     const S = plan()
     S.workouts = [{ d: MON, entries: [] }]
-    const m = dailyMessage(S, '2026-10-02')                 // Friday: 1/4 done, 3 needed, 3 days incl. today
+    const m = dailyMessage(S, '2026-10-02')                 // Friday: 1/4 done, 3 needed, 3 days incl. today: every day
     expect(m.key).toBe('week-behind')
     expect(m.text).toMatch(/3/)
     expect(m.text).toMatch(/Gün 1/)
@@ -72,7 +91,8 @@ describe('message of the day', () => {
     S.nutrition = { [MON]: { p: 100, c: 150, f: 50 }, '2026-09-27': { p: 110, c: 150, f: 50 } }
     const m = dailyMessage(S, TUE)
     expect(m.key).toBe('protein-low')
-    expect(m.text).toMatch(/105\/150|45 g/)
+    expect(m.text).toMatch(/105/)
+    expect(m.text).toMatch(/150|45 g/)
   })
   it('yesterday on target: praised with the numbers', () => {
     const S = plan(); S.week = {}

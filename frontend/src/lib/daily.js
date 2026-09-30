@@ -46,7 +46,7 @@ export function removeCardio(s, iso, id, now = Date.now()) {
 }
 
 // Cardio done inside a logged workout (an openGym cardio exercise), in minutes, per day.
-function workoutCardio(S, iso) {
+export function workoutCardio(S, iso) {
   let sessions = 0, min = 0
   for (const w of S?.workouts || []) {
     if (w?.d !== iso) continue
@@ -84,7 +84,7 @@ export function weekProgress(S, today) {
   }
 }
 // A workout that is only cardio does not count as a training session.
-function isCardioOnly(S, w) {
+export function isCardioOnly(S, w) {
   const es = (w?.entries || []).filter(e => e?.id)
   return es.length > 0 && es.every(e => (EXIDX[e.id]?.bp || (S.customEx || []).find(c => c.id === e.id)?.bp) === 'cardio')
 }

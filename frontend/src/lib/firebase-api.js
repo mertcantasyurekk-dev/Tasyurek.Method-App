@@ -12,6 +12,7 @@
 // each other's data while both are in use.
 
 import { compactNutrition } from './nutrition-core.js'   // the weekly seal: meals of past weeks are never stored
+import { buildSummary } from './member-summary.js'      // the ~1 KB the coach panel reads instead of the state
 
 export const FIREBASE = import.meta.env?.VITE_FIREBASE === '1'
 
@@ -198,7 +199,9 @@ async function putData(a, body) {
   const pre = cur.exists
     ? 'currentDocument.updateTime=' + encodeURIComponent(cur.updateTime)
     : 'currentDocument.exists=false'
-  const mask = 'updateMask.fieldPaths=state&updateMask.fieldPaths=rev&updateMask.fieldPaths=email&updateMask.fieldPaths=updatedAt'
+  const mask = 'updateMask.fieldPaths=state&updateMask.fieldPaths=rev&updateMask.fieldPaths=email&updateMask.fieldPaths=updatedAt&updateMask.fieldPaths=summary'
+  let summary = null
+  try { summary = JSON.stringify(buildSummary(state)) } catch { summary = null }
   const { r, body: res } = await jsonFetch(`${docUrl(a.uid)}?${mask}&${pre}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + a.idToken },
@@ -206,7 +209,8 @@ async function putData(a, body) {
       state: { stringValue: text },
       rev: { integerValue: String(nextRev) },
       email: { stringValue: a.email || '' },
-      updatedAt: { timestampValue: new Date().toISOString() }
+      updatedAt: { timestampValue: new Date().toISOString() },
+      summary: summary ? { stringValue: summary } : { nullValue: null }
     } })
   })
   if (!r.ok) {
@@ -254,42 +258,40 @@ async function listDocs(a, collection, maskFields) {
 
 const parseState = f => { try { return f.state?.stringValue ? JSON.parse(f.state.stringValue) : null } catch { return null } }
 
-// One line per member for the panel's list.
-function summaryOf(state) {
-  const ws = Array.isArray(state?.workouts) ? state.workouts : []
-  const bw = Array.isArray(state?.bodyweight) ? state.bodyweight : []
-  const last = ws.reduce((m, w) => (w?.d && (!m || w.d > m) ? w.d : m), null)
-  const since = new Date(); since.setDate(since.getDate() - 7)
-  const iso = since.toISOString().slice(0, 10)
-  const lastBw = bw.reduce((m, b) => (b?.d && (!m || b.d > m.d) ? b : m), null)
-  return { lastWorkout: last, workouts7: ws.filter(w => w?.d >= iso).length, workouts: ws.length, lastWeight: lastBw ? lastBw.w : null }
-}
-
 async function coachMembers(a) {
   // Members come from userdata; the other two only fill in the summary. If one of those cannot be
   // read (a missing Firestore rule, say) the list still opens, with a warning naming the collection.
   const users = await listDocs(a, 'userdata', ['displayName', 'email'])
   const warnings = []
   const soft = p => p.catch(e => { warnings.push(e.message); return [] })
-  const [states, plans] = await Promise.all([soft(listDocs(a, CFG.collection)), soft(listDocs(a, 'coachplan', ['planAt', 'targets']))])
+  // Only each member's ~1 KB summary, not their state (lib/member-summary.js).
+  const [states, plans] = await Promise.all([soft(listDocs(a, CFG.collection, ['summary', 'rev'])), soft(listDocs(a, 'coachplan', ['planAt', 'targets']))])
   const og = new Map(states.map(d => [d.id, d]))
   const pl = new Map(plans.map(d => [d.id, d]))
-  return users
-    .filter(u => (u.fields.email?.stringValue || '').toLowerCase() !== CFG.adminEmail)
-    .map(u => {
-      const st = og.get(u.id)
-      const email = u.fields.email?.stringValue || ''
-      return {
-        uid: u.id, email,
-        name: u.fields.displayName?.stringValue || email.split('@')[0] || u.id,
-        joined: !!st,                                   // has opened the new app
-        ...summaryOf(st ? parseState(st.fields) : null),
-        planAt: pl.get(u.id)?.fields?.planAt?.timestampValue || null,
-        hasTargets: !!pl.get(u.id)?.fields?.targets
-      }
+  const json = v => { try { return v?.stringValue ? JSON.parse(v.stringValue) : null } catch { return null } }
+  const out = []
+  for (const u of users) {
+    const email = u.fields.email?.stringValue || ''
+    if (email.toLowerCase() === CFG.adminEmail) continue
+    const st = og.get(u.id)
+    let summary = st ? json(st.fields.summary) : null
+    if (st && !summary) {
+      // Saved before summaries existed: work it out from the state this once (next save writes it).
+      try {
+        const { r, body } = await jsonFetch(docUrl(u.id), { headers: { Authorization: 'Bearer ' + a.idToken } })
+        if (r.ok) summary = buildSummary(parseState(body.fields || {}) || {})
+      } catch { summary = null }
+    }
+    const p = pl.get(u.id)
+    out.push({
+      uid: u.id, email, name: u.fields.displayName?.stringValue || email.split('@')[0] || u.id,
+      joined: !!st, summary,
+      planAt: p?.fields?.planAt?.timestampValue || null,
+      targets: json(p?.fields?.targets), hasTargets: !!p?.fields?.targets
     })
-    .sort((x, y) => x.name.localeCompare(y.name, 'tr'))
-    .concat(warnings.length ? [{ _warnings: warnings }] : [])
+  }
+  out.sort((x, y) => x.name.localeCompare(y.name, 'tr'))
+  return warnings.length ? out.concat([{ _warnings: warnings }]) : out
 }
 
 async function coachMember(a, uid) {
@@ -297,7 +299,14 @@ async function coachMember(a, uid) {
   if (!r.ok && r.status !== 404) throw err(r.status, body?.error?.message || 'read failed')
   const state = r.ok ? parseState(body.fields || {}) : null
   const p = await readPlan(a, uid)
-  return { state, plan: p.plan, targets: p.targets, reviews: p.reviews || [], supplements: Array.isArray(p.supplements) ? p.supplements : null, planRev: p.rev, trackerTargets: await trackerTargetsOf(a, uid) }
+  let info = { name: uid, email: '' }
+  try {
+    const u = await jsonFetch(`${DOCS()}/userdata/${encodeURIComponent(uid)}?mask.fieldPaths=displayName&mask.fieldPaths=email`, { headers: { Authorization: 'Bearer ' + a.idToken } })
+    const f = u.r.ok ? u.body?.fields || {} : {}
+    const email = f.email?.stringValue || ''
+    info = { name: f.displayName?.stringValue || email.split('@')[0] || uid, email }
+  } catch { /* the uid will do */ }
+  return { info, state, plan: p.plan, targets: p.targets, reviews: p.reviews || [], supplements: Array.isArray(p.supplements) ? p.supplements : null, planRev: p.rev, trackerTargets: await trackerTargetsOf(a, uid) }
 }
 
 const cleanPlan = plan => {
