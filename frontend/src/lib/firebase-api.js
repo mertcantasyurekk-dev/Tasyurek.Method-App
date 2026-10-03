@@ -511,7 +511,8 @@ async function sendReview(a, uid, { text, week, remove, sentAt }) {
     if (!t) throw err(400, 'Mesaj boş')
     // sentAt is only given when bringing old messages over from the tracker: they keep their date.
     const at = sentAt && !isNaN(Date.parse(sentAt)) && Date.parse(sentAt) <= Date.now() ? new Date(sentAt).toISOString() : new Date().toISOString()
-    reviews = [...reviews, { id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), text: t.slice(0, 8000), week: week || null, sentAt: at }]
+    // A message brought over from the tracker keeps its date and is marked, so it is not shown as new.
+    reviews = [...reviews, { id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), text: t.slice(0, 8000), week: week || null, sentAt: at, ...(sentAt ? { imported: true } : {}) }]
       .sort((x, y) => ((x.sentAt || '') < (y.sentAt || '') ? -1 : 1)).slice(-52)
   }
   const pre = cur.exists ? 'currentDocument.updateTime=' + encodeURIComponent(cur.updateTime) : 'currentDocument.exists=false'

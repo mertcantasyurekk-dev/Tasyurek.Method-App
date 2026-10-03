@@ -214,3 +214,12 @@ describe('measurements from the tracker', () => {
     expect(applyTrackerImport(S, convertTracker(payload), { now: 'T2' }).measurements).toBe(0)
   })
 })
+
+describe('the same import twice', () => {
+  it('gives tracker workouts stable ids', () => {
+    const a = convertTracker({ workouts: [{ id: 'abc', date: '2026-09-01', exercises: [{ name: 'barbell bench press', sets: [{ weight: 50, reps: 5 }] }] }, { date: '2026-09-02', exercises: [{ name: 'barbell bench press', sets: [{ weight: 50, reps: 5 }] }] }] })
+    const b = convertTracker({ workouts: [{ id: 'abc', date: '2026-09-01', exercises: [{ name: 'barbell bench press', sets: [{ weight: 50, reps: 5 }] }] }, { date: '2026-09-02', exercises: [{ name: 'barbell bench press', sets: [{ weight: 50, reps: 5 }] }] }] })
+    expect(a.workouts.map(w => w.id)).toEqual(['tt-w-abc', 'tt-w-2026-09-02-1'])
+    expect(b.workouts.map(w => w.id)).toEqual(a.workouts.map(w => w.id))
+  })
+})

@@ -122,6 +122,21 @@ silinen gün `{ d, del: true, t }` olarak kalır. Senkron: gün bazında son yaz
 - 360°: `ölçüler:` satırı tracker biçiminde — [BAŞLANGIÇ] ilk ölçüm, [N-1]/[N] o haftadaki son ölçüm.
 - Tracker'dan aktarma ölçüleri de getirir (uygulamada o gün kaydı yoksa).
 
+## Tam geçiş (tracker → yeni uygulama)
+
+- **Otomatik aktarım** (`autoImportFromTracker`, `components/TrackerImport.jsx`): herkes (koç dahil) yeni uygulamaya ilk
+  girişinde, profilinde `trackerImport` damgası yoksa, ~3,5 sn sonra tracker geçmişini kendiliğinden alır (antrenman, kilo,
+  beslenme, ölçü, kardiyo, takviye işaretleri; koç programı yoksa rutinler). Tracker antrenmanları sabit kimlik alır
+  (`tt-w-<id>`), iki cihazda ya da iki kez aktarmak çift kayıt yaratmaz. Ayarlar'daki elle aktarma kalır (geçişten sonra
+  eski uygulamaya girilenleri getirmek için).
+- **Geçiş ekranı** (Koç paneli → **Tracker'dan geçiş**, `components/MigrationSheet.jsx`): her üyenin gerçek tracker
+  verisinden yazmadan önizleme (program, antrenman sayısı ve tarih aralığı, kilo, beslenme günleri, ölçüm, kardiyo,
+  kütüphaneyle eşleşmeyen hareket adları) + koçun kendi verisinin önizlemesi; **Koç tarafını taşı**: sadece eksik olanlar
+  (program, hedefler, takviyeler, not/hedef/raporlar, değerlendirmeler).
+- Tracker'dan taşınan değerlendirmeler `imported: true` taşır: Ana sayfadaki "Koçundan" kartında "yeni" görünmez, arşivde durur.
+- Eski tracker'ın `TT-MOVED` sürümü (ayrı dosya, geçiş günü yayınlanır): üye girişinde uygulama yüklenmez; cihazda
+  gönderilmemiş kayıt varsa önce birleştirilerek yazılır, sonra yeni uygulamaya yönlendiren ekran. Koç eski uygulamayı kullanır.
+
 ## Tracker programlarının aktarımı
 
 Koç panelinde **Tracker programlarını aktar** (hepsi birden) ya da üye detayında **Tracker programını ata**

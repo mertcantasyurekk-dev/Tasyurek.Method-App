@@ -52,3 +52,33 @@ export async function importFromTracker() {
     }
   })
 }
+
+// The first time someone opens this app, their tracker history comes over by itself — nobody has to
+// find the button. Once per profile (S.trackerImport is the stamp; it syncs, so another device does
+// not import again), a few seconds after start so the first sync has landed. Importing twice is
+// harmless anyway: workouts have stable ids, days already here win.
+const autoTried = new Set()   // per account: signing out and in as someone else tries for them too
+export function autoImportFromTracker() {
+  const uid = useStore.getState().user?.id
+  if (!uid || autoTried.has(uid)) return
+  autoTried.add(uid)
+  setTimeout(async () => {
+    const st = useStore.getState()
+    if (st.user?.id !== uid || st.S?.trackerImport) return
+    let payload
+    try { payload = readPayload((await api('/api/tracker')).payload) } catch { return }
+    if (!payload) return
+    const S = useStore.getState().S
+    if (S.trackerImport) return
+    const conv = convertTracker(payload, S.customEx || [])
+    if (!conv.routines.length && !conv.workouts.length && !conv.bodyweight.length && !conv.nutrition?.length && !conv.measurements?.length && !Object.keys(conv.cardio || {}).length) {
+      useStore.getState().update(s => { s.trackerImport = { at: new Date().toISOString(), empty: true } })
+      return
+    }
+    let res
+    useStore.getState().update(s => { res = applyTrackerImport(s, conv) })
+    const parts = [res.workouts && `${res.workouts} antrenman`, res.weights && `${res.weights} kilo`, res.days && `${res.days} gün beslenme`,
+      res.measurements && `${res.measurements} ölçüm`, res.cardioDays && `${res.cardioDays} gün kardiyo`].filter(Boolean)
+    if (parts.length) toast(`Eski kayıtların taşındı: ${parts.join(', ')} ✨`)
+  }, 3500)
+}

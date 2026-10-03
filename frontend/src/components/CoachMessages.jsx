@@ -11,7 +11,7 @@ const when = iso => (iso ? fmtDate(String(iso).slice(0, 10), true) : '')
 const RECENT_DAYS = 21
 
 export const reviewsOf = S => (Array.isArray(S?.coachReviews) ? S.coachReviews : []).filter(r => r && r.text)
-export const hasUnread = S => reviewsOf(S).some(r => (r.sentAt || '') > (S.reviewsSeenAt || ''))
+export const hasUnread = S => reviewsOf(S).some(r => !r.imported && (r.sentAt || '') > (S.reviewsSeenAt || ''))
 
 function markSeen() {
   const S = useStore.getState().S
@@ -37,7 +37,9 @@ export const reviewsSheet = () => { markSeen(); useUI.getState().openSheet(close
 export default function CoachMessageCard() {
   const S = useStore(s => s.S)
   const list = reviewsOf(S)
-  const last = list[list.length - 1]
+  // The newest message actually sent from here; ones brought over from the tracker stay in the archive.
+  const fresh = list.filter(r => !r.imported)
+  const last = fresh[fresh.length - 1]
   if (!last) return null
   const age = (Date.now() - new Date(last.sentAt || 0).getTime()) / 86400000
   if (!(age <= RECENT_DAYS)) return null

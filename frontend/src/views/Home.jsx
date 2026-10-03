@@ -11,6 +11,7 @@ import CoachMessageCard from '../components/CoachMessages.jsx'
 import { maybeAutoBackup } from '../components/Backup.jsx'
 import MeasurementsCard from '../components/MeasurementsCard.jsx'
 import { DailyMessageCard, WeekCard, SupplementsCard } from '../components/DailyCards.jsx'
+import { autoImportFromTracker } from '../components/TrackerImport.jsx'
 import { bwSheet, goalSheet, dayOverrideSheet, calendarSheet, startFlow, starterPlanSheet, bwDeltaColor, weighInsSheet } from '../sheets.jsx'
 import LineChart from '../components/LineChart.jsx'
 import Icon from '../components/Icon.jsx'
@@ -26,6 +27,8 @@ export default function Home() {
   const user = useStore(s => s.user)
   // Taşyürek: the coach opening the app is when the every-two-days backup gets its chance.
   useEffect(() => { if (FIREBASE && user?.admin) maybeAutoBackup() }, [user?.admin])
+  // Taşyürek: the first time in, the old tracker's history comes over by itself.
+  useEffect(() => { if (FIREBASE && user) autoImportFromTracker() }, [user?.id])
   const [weekOffset, setWeekOffset] = useState(0)
 
   const today = new Date()

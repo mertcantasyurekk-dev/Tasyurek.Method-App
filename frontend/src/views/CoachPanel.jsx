@@ -19,6 +19,7 @@ import { TargetsForm } from '../components/NutritionCard.jsx'
 import CoachWeekly from './CoachWeekly.jsx'
 import { loadTrackerPlan, oneMemberTransferSheet, everyoneTransferSheet } from '../components/TrackerTransfer.jsx'
 import { backupSheet } from '../components/Backup.jsx'
+import { migrationSheet } from '../components/MigrationSheet.jsx'
 import { FIELDS as MEAS_FIELDS, changesOf, latestOf as lastMeasurement, daysSinceLast as measAgo } from '../lib/measurements.js'
 import { weekProgress, suppAdherence } from '../lib/daily.js'
 import { buildSummary, statsOf, attentionOf, attentionScore } from '../lib/member-summary.js'
@@ -81,7 +82,8 @@ export function CoachPanel() {
     {error && <div className="card small" style={{ color: 'var(--red)' }}>{error}</div>}
     {warnings.map((w, i) => <div key={i} className="card small" style={{ color: 'var(--orange)' }}>{w} — bu bilgiler listede eksik görünür. Firestore kurallarını kontrol et.</div>)}
     {members && <div className="row" style={{ gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-      <Button size="sm" variant="tinted" icon="download" onClick={() => everyoneTransferSheet({ members, onDone: load })}>Tracker programlarını aktar</Button>
+      <Button size="sm" variant="primary" icon="download" onClick={() => migrationSheet({ members, onDone: load })}>Tracker'dan geçiş</Button>
+      <Button size="sm" variant="tinted" icon="download" onClick={() => everyoneTransferSheet({ members, onDone: load })}>Sadece programlar</Button>
       <Button size="sm" icon="cloud" onClick={() => backupSheet({ members })}>Yedekler</Button>
     </div>}
     {members && <>

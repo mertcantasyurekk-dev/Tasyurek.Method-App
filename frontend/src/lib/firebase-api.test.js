@@ -456,7 +456,8 @@ describe('coach notes, reviews, tracker extras', () => {
     expect(new Set(r2.reviews.map(x => x.id)).size).toBe(2)   // unique ids, even in the same millisecond
     await expect(PUT('/api/coach/review', { uid: 'U1', text: '  ' })).rejects.toMatchObject({ status: 400 })
     const old = await PUT('/api/coach/review', { uid: 'U1', text: 'tracker\'dan eski', sentAt: '2026-09-01T09:00:00Z' })
-    expect(old.reviews[0]).toMatchObject({ text: 'tracker\'dan eski', sentAt: '2026-09-01T09:00:00.000Z' })   // keeps its date, sorts first
+    expect(old.reviews[0]).toMatchObject({ text: 'tracker\'dan eski', sentAt: '2026-09-01T09:00:00.000Z', imported: true })   // keeps its date, sorts first, marked
+    expect(old.reviews[1].imported).toBeUndefined()
     await PUT('/api/coach/review', { uid: 'U1', remove: old.reviews[0].id })
     await post('/api/logout', {}); await asMember()
     const d = await firebaseApi('/api/data')

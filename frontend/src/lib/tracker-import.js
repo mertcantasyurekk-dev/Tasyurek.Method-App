@@ -101,7 +101,7 @@ export function convertTracker(payload, existingCustom = [], { stableIds = false
   }).filter(r => r.ex.length)
 
   // Workouts, in the shape mergeImport takes.
-  const workouts = (Array.isArray(payload?.workouts) ? payload.workouts : []).map(w => {
+  const workouts = (Array.isArray(payload?.workouts) ? payload.workouts : []).map((w, wi) => {
     const d = isoDate(w?.date)
     if (!d) return null
     const entries = (w.exercises || []).map(e => {
@@ -115,7 +115,9 @@ export function convertTracker(payload, existingCustom = [], { stableIds = false
     if (!entries.length) return null
     const start = new Date(d + 'T18:00:00').getTime()
     return {
-      id: 'tt' + uid(), d, start, end: start, routineId: null,
+      // The same tracker workout always gets the same id, so importing on two devices (or twice)
+      // ends as one entry after sync, never two.
+      id: 'tt-w-' + (w.id != null ? String(w.id).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) : d + '-' + wi), d, start, end: start, routineId: null,
       name: String(w.label || '').trim() || 'Antrenman', entries, prs: [],
       vol: entries.reduce((a, e) => a + e.sets.reduce((b, s) => b + s.w * s.r, 0), 0)
     }
