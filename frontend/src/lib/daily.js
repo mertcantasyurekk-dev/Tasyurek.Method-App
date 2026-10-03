@@ -162,3 +162,21 @@ export function dailyFromTracker(payload) {
   }
   return { cardio, supps }
 }
+
+/* ---- the day's note (S.dayNotes[date] = { text, t }) ---- */
+
+export const dayNoteOf = (S, iso) => (S?.dayNotes?.[iso]?.text || '')
+export function setDayNote(s, iso, text, now = Date.now()) {
+  if (!s.dayNotes || typeof s.dayNotes !== 'object') s.dayNotes = {}
+  s.dayNotes[iso] = { text: String(text || '').slice(0, 2000), t: now }
+}
+// Per day, the note written last (an emptied note is a note too).
+export function mergeDayNotes(a, b) {
+  const A = a && typeof a === 'object' ? a : {}, B = b && typeof b === 'object' ? b : {}
+  const out = {}
+  for (const iso of new Set([...Object.keys(A), ...Object.keys(B)])) {
+    const x = A[iso], y = B[iso]
+    out[iso] = { ...(!x ? y : !y ? x : (Number(y.t) || 0) > (Number(x.t) || 0) ? y : x) }
+  }
+  return out
+}

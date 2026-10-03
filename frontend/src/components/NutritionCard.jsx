@@ -9,8 +9,9 @@ import { useCoached } from '../lib/coached.js'
 import { cleanTargets } from '../lib/firebase-api.js'
 import { dayOf, totalsOf, targetsOf, macroTargetFor, kcalOf, addToDay, setTotals, setWater, setSleep, setDayType, removeItem, mealsOf, signedSum, isClosedDay } from '../lib/nutrition.js'
 import { foodSheet } from './FoodSheet.jsx'
+import { dayNoteOf, setDayNote } from '../lib/daily.js'
 import Icon from './Icon.jsx'
-import { Button, NumberField, Section, Row, Segmented } from './ui.jsx'
+import { Button, NumberField, Section, Row, Segmented, TextArea } from './ui.jsx'
 import './nutrition.css'
 
 const ui = () => useUI.getState()
@@ -203,6 +204,12 @@ function DayEdit({ iso, close }) {
       <Button icon="checkCircle" onClick={saveFix}>Toplamı kaydet</Button>
       <div style={{ height: 14 }} />
     </>}
+    <Section title="Günün notu" footer="Koçun görür. Ağrı, enerji, uyku, stres… ne varsa.">
+      <div style={{ padding: '10px 14px' }}>
+        <TextArea rows={3} defaultValue={dayNoteOf(S, iso)} maxLength={2000} placeholder="Bugün nasıl hissettin?"
+          onBlur={e => { const v = e.target.value; if (v !== dayNoteOf(S, iso)) update(s => setDayNote(s, iso, v)) }} />
+      </div>
+    </Section>
     <Section title="Uyku">
       <Row icon="moon" title="Uyku" subtitle={T?.sleep ? `Hedef ${fmtNum(T.sleep)} saat` : undefined}>
         <button className="iconbtn" aria-label="Uyku azalt" onClick={() => update(s => setSleep(s, iso, (day?.sleep || 0) - 0.5))}><Icon name="minus" /></button>

@@ -1,5 +1,6 @@
 // Taşyürek Method: Settings → "Eski Tracker'dan aktar". One-way, read-only on the tracker's side.
 import { api } from '../lib/api.js'
+import { todayISO } from '../lib/format.js'
 import { useStore } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
 import { confirmSheet } from '../sheets.jsx'
@@ -8,13 +9,13 @@ import { readPayload, convertTracker, applyTrackerImport } from '../lib/tracker-
 const toast = m => useUI.getState().toast(m)
 
 export async function importFromTracker() {
-  let payload
-  try { payload = readPayload((await api('/api/tracker')).payload) }
+  let payload, extra = {}
+  try { const r = await api('/api/tracker'); payload = readPayload(r.payload); extra = { timers: r.workoutTimers, mealLog: r.mealLog, today: todayISO() } }
   catch { toast('Tracker verisine ulaşılamadı — internet bağlantını kontrol et.'); return }
   if (!payload) { toast('Tracker\'da aktarılacak veri bulunamadı.'); return }
 
   const S = useStore.getState().S
-  const conv = convertTracker(payload, S.customEx || [])
+  const conv = convertTracker(payload, S.customEx || [], extra)
   const first = !S.trackerImport
   const nR = first && !S.coachPlanAt ? conv.routines.length : 0
   if (!nR && !conv.workouts.length && !conv.bodyweight.length && !conv.nutrition?.length && !conv.measurements?.length && !Object.keys(conv.cardio || {}).length) { toast('Tracker\'da aktarılacak veri bulunamadı.'); return }
@@ -65,12 +66,12 @@ export function autoImportFromTracker() {
   setTimeout(async () => {
     const st = useStore.getState()
     if (st.user?.id !== uid || st.S?.trackerImport) return
-    let payload
-    try { payload = readPayload((await api('/api/tracker')).payload) } catch { return }
+    let payload, extra = {}
+    try { const r = await api('/api/tracker'); payload = readPayload(r.payload); extra = { timers: r.workoutTimers, mealLog: r.mealLog, today: todayISO() } } catch { return }
     if (!payload) return
     const S = useStore.getState().S
     if (S.trackerImport) return
-    const conv = convertTracker(payload, S.customEx || [])
+    const conv = convertTracker(payload, S.customEx || [], extra)
     if (!conv.routines.length && !conv.workouts.length && !conv.bodyweight.length && !conv.nutrition?.length && !conv.measurements?.length && !Object.keys(conv.cardio || {}).length) {
       useStore.getState().update(s => { s.trackerImport = { at: new Date().toISOString(), empty: true } })
       return

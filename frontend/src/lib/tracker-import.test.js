@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect } from 'vitest'
-import { parseReps, readPayload, convertTracker, applyTrackerImport, trackerPlan, defaultWeek } from './tracker-import.js'
+import { parseReps, readPayload, convertTracker, applyTrackerImport, trackerPlan, defaultWeek, verifyImport } from './tracker-import.js'
 import { DEF } from '../store/useStore.js'
 import { EXIDX } from './exercises.js'
 
@@ -119,9 +119,9 @@ describe('applyTrackerImport', () => {
     const S = clone(DEF)
     S.workouts = [{ id: 'own', d: '2026-09-03', entries: [], prs: [] }]   // trained in the new app that day
     const r1 = applyTrackerImport(S, convertTracker(PAYLOAD, S.customEx), { now: 'T1' })
-    expect(r1).toMatchObject({ routines: 2, workouts: 1, workoutsSkipped: 2, weights: 2, customs: 2 })
-    expect(S.workouts.map(w => w.d)).toEqual(['2026-09-01', '2026-09-03'])
-    expect(S.workouts.find(w => w.d === '2026-09-03').id).toBe('own')
+    expect(r1).toMatchObject({ routines: 2, workouts: 3, workoutsSkipped: 0, weights: 2, customs: 2 })   // the day with our own workout keeps the tracker's too
+    expect(S.workouts.map(w => w.d)).toEqual(['2026-09-01', '2026-09-03', '2026-09-03', '2026-09-03'])
+    expect(S.workouts.some(w => w.id === 'own')).toBe(true)
     expect(S.routines).toHaveLength(2)
     expect(S.customEx).toHaveLength(2)
     expect(S.bodyweight.map(b => b.w)).toEqual([84.2, 83.9])
@@ -137,7 +137,7 @@ describe('applyTrackerImport', () => {
     expect(r2).toMatchObject({ routines: 0, workouts: 1, weights: 1, customs: 0 })
     expect(S.routines).toHaveLength(2)
     expect(S.customEx).toHaveLength(2)
-    expect(S.workouts.map(w => w.d)).toEqual(['2026-09-01', '2026-09-03', '2026-09-08'])
+    expect(S.workouts.map(w => w.d)).toEqual(['2026-09-01', '2026-09-03', '2026-09-03', '2026-09-03', '2026-09-08'])
     expect(S.trackerImport).toEqual({ at: 'T2', firstAt: 'T1' })
 
     const r3 = applyTrackerImport(S, convertTracker(later, S.customEx), { now: 'T3' })
@@ -168,7 +168,8 @@ describe('nutrition from the tracker', () => {
       'bozuk': { protein: 100 }
     } }
     const conv = convertTracker(payload)
-    expect(conv.nutrition.map(n => n.d)).toEqual(['2026-09-01', '2026-09-02'])
+    expect(conv.nutrition.map(n => n.d)).toEqual(['2026-09-01', '2026-09-02', '2026-09-03'])
+    expect(conv.nutrition[2]).toMatchObject({ note: 'x', item: null })
     expect(conv.nutrition[0].item).toMatchObject({ id: 'tt-2026-09-01', p: 150, c: 200.5, f: 60 })
     expect(conv.nutrition[1].item).toBeNull()
     const S = clone(DEF)
@@ -221,5 +222,84 @@ describe('the same import twice', () => {
     const b = convertTracker({ workouts: [{ id: 'abc', date: '2026-09-01', exercises: [{ name: 'barbell bench press', sets: [{ weight: 50, reps: 5 }] }] }, { date: '2026-09-02', exercises: [{ name: 'barbell bench press', sets: [{ weight: 50, reps: 5 }] }] }] })
     expect(a.workouts.map(w => w.id)).toEqual(['tt-w-abc', 'tt-w-2026-09-02-1'])
     expect(b.workouts.map(w => w.id)).toEqual(a.workouts.map(w => w.id))
+  })
+})
+
+describe('every kind of tracker record comes over', () => {
+  const payload = {
+    workouts: [{ id: 'w1', date: '2026-09-10', label: 'A', exercises: [{ name: 'barbell bench press', sets: [{ weight: '80', reps: '5' }] }] }],
+    daily: {
+      '2026-09-10': { weight: '81,2', protein: 150, carbs: 200, fat: 60, notes: 'Dizim biraz ağrıdı' },
+      '2026-09-28': { notes: '' }
+    },
+    measurements: [{ id: 'm1', date: '2026-09-09', weight: '81.6', waistNavel: 90 }, { id: 'm2', date: '2026-09-10', weight: '99', chest: 100 }],
+    customDayTypeChoice: { '2026-09-10': 'training', '2026-09-11': 'rest' },
+    priorBests: { 'barbell bench press': '95', 'Hip Thrust (makine)': 140, bos: 0 }
+  }
+  const mealLog = {
+    '2026-09-11': { breakfast: [{ name: 'Yumurta', unit: 'portion', portionLabel: '1 adet', qty: 2, protein: 13, carbs: 1, fat: 10 }], lunch: [], dinner: [], snacks: [] },
+    '2026-09-29': { breakfast: [{ name: 'Yulaf', unit: '100g', qty: 80, protein: 10, carbs: 50, fat: 5 }], lunch: [{ name: 'Tavuk', unit: '100g', qty: 150, protein: 46, carbs: 0, fat: 5 }], dinner: [], snacks: [] }
+  }
+  const conv = convertTracker(payload, [], { timers: { '2026-09-10': { totalSec: 3720 } }, mealLog, today: '2026-09-30' })
+
+  it('workout weights and durations', () => {
+    const w = conv.workouts.find(x => x.id === 'tt-w-w1')
+    expect(w.entries[0].sets).toEqual([{ w: 80, r: 5, done: true }])
+    expect(w.end - w.start).toBe(3720 * 1000)
+  })
+  it('body weight from daily entries and from the measurement form', () => {
+    expect(conv.bodyweight.map(b => [b.d, b.w])).toEqual([['2026-09-09', 81.6], ['2026-09-10', 81.2]])   // daily wins over the form
+  })
+  it('notes, day types, meals: this week as meals, earlier as day totals', () => {
+    const by = Object.fromEntries(conv.nutrition.map(n => [n.d, n]))
+    expect(by['2026-09-10']).toMatchObject({ note: 'Dizim biraz ağrıdı', type: 'training', item: { p: 150 } })
+    expect(by['2026-09-11']).toMatchObject({ type: 'rest', item: { p: 13, c: 1, f: 10 }, items: null })        // an earlier week: the meal sum
+    expect(by['2026-09-29'].items.map(i => [i.m, i.n, i.p])).toEqual([['b', 'Yulaf', 10], ['l', 'Tavuk', 46]])    // this week: the meals
+    expect(by['2026-09-29'].item).toBeNull()
+  })
+  it('bests from before the tracker, in a marked session before the first workout', () => {
+    const pb = conv.workouts.find(x => x.id === 'tt-w-prior-bests')
+    expect(pb).toMatchObject({ d: '2026-09-09', name: 'Önceki rekorlar (tracker)' })
+    expect(pb.entries.map(e => e.sets[0].w)).toEqual([95, 140])
+    expect(conv.priorBests).toBe(2)
+  })
+  it('applies all of it, never over what the app already has', () => {
+    const S = clone(DEF)
+    S.nutrition = { '2026-09-29': { items: [{ id: 'mine', p: 20, c: 0, f: 0, t: 1 }], _ts: 1 } }
+    S.dayNotes = { '2026-09-10': { text: 'benim notum', t: 1 } }
+    applyTrackerImport(S, conv, { now: 'T' })
+    expect(S.nutrition['2026-09-29'].items.map(i => i.id)).toEqual(['mine'])        // the app's own meals stay
+    expect(S.nutrition['2026-09-11']).toMatchObject({ p: 13, type: 'rest' })
+    expect(S.dayNotes['2026-09-10'].text).toBe('benim notum')
+    expect(S.workouts.some(w => w.id === 'tt-w-prior-bests')).toBe(true)
+    expect(S.bodyweight.length).toBe(2)
+  })
+})
+
+describe('no loss on days that also have a workout here', () => {
+  it('a tracker workout on a day the app already has one: both kept', () => {
+    const S = clone(DEF)
+    S.workouts = [{ id: 'mine', d: '2026-09-01', entries: [], prs: [] }]
+    const conv = convertTracker({ workouts: [{ id: 'trk', date: '2026-09-01', exercises: [{ name: 'barbell bench press', sets: [{ weight: 60, reps: 8 }] }] }] })
+    const r = applyTrackerImport(S, conv, { now: 'T' })
+    expect(r.workouts).toBe(1)
+    expect(S.workouts.map(w => w.id).sort()).toEqual(['mine', 'tt-w-trk'])
+    expect(applyTrackerImport(S, conv, { now: 'T2' }).workouts).toBe(0)       // and never twice
+  })
+})
+
+describe('verification after the import', () => {
+  it('counts what came over, kind by kind, and says when something is missing', () => {
+    const conv = convertTracker(PAYLOAD)
+    const S = clone(DEF)
+    expect(verifyImport(conv, S).ok).toBe(false)
+    applyTrackerImport(S, conv, { now: 'T' })
+    const v = verifyImport(conv, S)
+    expect(v.ok).toBe(true)
+    expect(v.rows.find(r => r.label === 'antrenman')).toMatchObject({ want: 3, got: 3, ok: true })
+    S.workouts = S.workouts.slice(1)
+    const v2 = verifyImport(conv, S)
+    expect(v2.ok).toBe(false)
+    expect(v2.rows.find(r => r.label === 'antrenman')).toMatchObject({ want: 3, got: 2, ok: false })
   })
 })

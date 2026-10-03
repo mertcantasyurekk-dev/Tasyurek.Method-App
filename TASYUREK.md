@@ -133,6 +133,16 @@ silinen gün `{ d, del: true, t }` olarak kalır. Senkron: gün bazında son yaz
   verisinden yazmadan önizleme (program, antrenman sayısı ve tarih aralığı, kilo, beslenme günleri, ölçüm, kardiyo,
   kütüphaneyle eşleşmeyen hareket adları) + koçun kendi verisinin önizlemesi; **Koç tarafını taşı**: sadece eksik olanlar
   (program, hedefler, takviyeler, not/hedef/raporlar, değerlendirmeler).
+- **Tracker'dan gelen her şey:** antrenmanlar (set set kilo/tekrar, **süreleri** `workoutTimers`'tan), günlük kilolar +
+  **ölçüm formundaki kilo** (o gün günlük kilo yoksa), 10 alanlı ölçüler, günlük makrolar (önceki haftalar toplam; **bu haftanın
+  öğünleri** `mealLog`'dan öğün öğün; makrosu girilmemiş günlerde öğün toplamı), su, uyku, **gün tipi seçimleri**
+  (`customDayTypeChoice`), **günlük notlar** (`S.dayNotes`, Günün öğünleri → Günün notu; 360° "günlük notlar"),
+  kardiyo, takviye işaretleri, **önceki rekorlar** (`priorBests` → "Önceki rekorlar (tracker)" oturumu, ilk antrenmandan
+  bir gün önce). Tracker antrenmanları **kimlikle** birleşir (tarihle değil): yeni uygulamada aynı güne antrenman olsa da kaybolmaz.
+  Aktarılmayan: kayıtlı öğün şablonları (`mealTemplates`, yeni uygulamada özellik yok), önceki haftaların öğün detayı
+  (karar gereği sadece toplam), seans içi hedef notları; ısınma setleri tracker'da ayırt edilmediği için normal set olarak gelir.
+- **Doğrulama** (`verifyImport`): geçiş ekranında, aktarım yapılmış her üye ve koç için tür tür "tracker / yeni" sayıları
+  (✓ ya da ⚠ eksik).
 - Tracker'dan taşınan değerlendirmeler `imported: true` taşır: Ana sayfadaki "Koçundan" kartında "yeni" görünmez, arşivde durur.
 - Eski tracker'ın `TT-MOVED` sürümü (ayrı dosya, geçiş günü yayınlanır): üye girişinde uygulama yüklenmez; cihazda
   gönderilmemiş kayıt varsa önce birleştirilerek yazılır, sonra yeni uygulamaya yönlendiren ekran. Koç eski uygulamayı kullanır.

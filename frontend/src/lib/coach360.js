@@ -104,6 +104,8 @@ function periodStats(S, dates) {
     }
     if (typeof wk.note === 'string' && wk.note.trim()) st.notes.push(wk.d.slice(5) + ': ' + wk.note.trim().replace(/\s+/g, ' ').slice(0, 300))
   }
+  // the day's own notes (Günün öğünleri → Not, and the tracker's daily notes)
+  for (const d of dates) { const t = S.dayNotes?.[d]?.text; if (t && t.trim()) st.notes.push(d.slice(5) + ': ' + t.trim().replace(/\s+/g, ' ').slice(0, 300)) }
   return st
 }
 

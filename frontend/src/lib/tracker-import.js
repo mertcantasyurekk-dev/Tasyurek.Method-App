@@ -30,6 +30,7 @@ const libraryId = name => {
   return byName.get(clean(name)) || null
 }
 
+const isoOfDate = x => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`
 const num = v => { const n = parseFloat(String(v ?? '').replace(',', '.')); return isFinite(n) ? n : 0 }
 const isoDate = s => (/^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) ? s : null)
 
@@ -56,7 +57,7 @@ export function readPayload(raw) {
  * Work out everything the import would add, without touching state.
  * `existingCustom` is the profile's S.customEx: a name already there is reused, not duplicated.
  */
-export function convertTracker(payload, existingCustom = [], { stableIds = false } = {}) {
+export function convertTracker(payload, existingCustom = [], { stableIds = false, timers = null, mealLog = null, today = null } = {}) {
   const custom = new Map()   // clean name -> custom exercise (existing or new)
   existingCustom.forEach(c => { if (c && c.n) custom.set(clean(c.n), c) })
   const fresh = []
@@ -114,31 +115,82 @@ export function convertTracker(payload, existingCustom = [], { stableIds = false
     }).filter(Boolean)
     if (!entries.length) return null
     const start = new Date(d + 'T18:00:00').getTime()
+    // The tracker's timer kept the session's length beside the payload (workoutTimers[date].totalSec).
+    const sec = num(timers?.[d]?.totalSec)
     return {
       // The same tracker workout always gets the same id, so importing on two devices (or twice)
       // ends as one entry after sync, never two.
-      id: 'tt-w-' + (w.id != null ? String(w.id).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) : d + '-' + wi), d, start, end: start, routineId: null,
+      id: 'tt-w-' + (w.id != null ? String(w.id).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) : d + '-' + wi), d, start, end: start + (sec > 0 && sec < 6 * 3600 ? Math.round(sec) * 1000 : 0), routineId: null,
       name: String(w.label || '').trim() || 'Antrenman', entries, prs: [],
       vol: entries.reduce((a, e) => a + e.sets.reduce((b, s) => b + s.w * s.r, 0), 0)
     }
   }).filter(Boolean).sort((a, b) => (a.d < b.d ? -1 : 1))
 
   // Daily weights.
-  const bodyweight = Object.entries(payload?.daily || {})
-    .map(([d, day]) => ({ d: isoDate(d), w: Math.round(num(day?.weight) * 10) / 10 }))
-    .filter(b => b.d && b.w > 20 && b.w < 400)
+  // A weight typed into the tracker's measurement form counts too, for days without a daily weight.
+  const bwByDay = new Map()
+  for (const m of Array.isArray(payload?.measurements) ? payload.measurements : []) {
+    const d = isoDate(typeof m?.date === 'string' ? m.date.slice(0, 10) : null), w = Math.round(num(m?.weight) * 10) / 10
+    if (d && w > 20 && w < 400) bwByDay.set(d, w)
+  }
+  for (const [d, day] of Object.entries(payload?.daily || {})) {
+    const w = Math.round(num(day?.weight) * 10) / 10
+    if (isoDate(d) && w > 20 && w < 400) bwByDay.set(d, w)
+  }
+  const bodyweight = [...bwByDay.entries()].map(([d, w]) => ({ d, w }))
     .sort((a, b) => (a.d < b.d ? -1 : 1))
     .map(b => ({ ...b, t: new Date(b.d + 'T08:00:00').getTime() }))
 
-  // Daily macros, water, sleep: one item per day under a fixed id, so importing again adds nothing twice.
-  const nutrition = Object.entries(payload?.daily || {}).map(([d, day]) => {
-    if (!isoDate(d) || !day) return null
+  // Daily macros, water, sleep, the day type picked by hand. Meals the tracker logged one by one
+  // (mealLog) come as meals for the current week — where this app keeps them — and as day totals
+  // before it, where the tracker had no day total of its own.
+  const MEAL = { breakfast: 'b', lunch: 'l', dinner: 'd', snacks: 's' }
+  const weekFrom = today ? (() => { const x = new Date(today + 'T12:00:00'); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return isoOfDate(x) })() : null
+  const mealDays = mealLog && typeof mealLog === 'object' ? mealLog : {}
+  const dayType = v => (v === 'training' ? 'training' : v === 'rest' || v === 'off' || v === 'offDay' ? 'rest' : null)
+  const allDays = new Set([...Object.keys(payload?.daily || {}), ...Object.keys(mealDays), ...Object.keys(payload?.customDayTypeChoice || {})])
+  const r1 = v => Math.round(v * 10) / 10
+  const nutrition = [...allDays].filter(isoDate).map(d => {
+    const day = payload?.daily?.[d] || {}
     const p = num(day.protein), c = num(day.carbs), f = num(day.fat)
     const water = num(day.water), sleep = num(day.sleep)
-    if (!(p || c || f || water || sleep)) return null
-    return { d, item: p || c || f ? { id: 'tt-' + d, name: 'Tracker', p: Math.round(p * 10) / 10, c: Math.round(c * 10) / 10, f: Math.round(f * 10) / 10, t: new Date(d + 'T20:00:00').getTime() } : null,
-      water: water > 0 && water <= 15 ? water : 0, sleep: sleep > 0 && sleep <= 24 ? sleep : 0 }
+    const meals = []
+    for (const [k, list] of Object.entries(mealDays[d] || {})) {
+      ;(Array.isArray(list) ? list : []).forEach((e, i) => {
+        const mp = num(e?.protein), mc = num(e?.carbs), mf = num(e?.fat)
+        if (!(mp || mc || mf)) return
+        meals.push({ id: `tt-m-${d}-${k}-${i}`, m: MEAL[k] || 's', n: String(e?.name || 'Yemek').slice(0, 80), q: r1(num(e?.qty)) || 1,
+          u: e?.unit === '100g' ? 'g' : (e?.portionLabel || null), p: r1(mp), c: r1(mc), f: r1(mf), t: new Date(d + 'T12:00:00').getTime() + i })
+      })
+    }
+    const mealSum = meals.reduce((a, x) => ({ p: a.p + x.p, c: a.c + x.c, f: a.f + x.f }), { p: 0, c: 0, f: 0 })
+    const thisWeek = weekFrom && d >= weekFrom
+    const type = dayType(payload?.customDayTypeChoice?.[d])
+    const note = typeof day.notes === 'string' ? day.notes.trim().slice(0, 2000) : ''
+    const totals = p || c || f ? { p: r1(p), c: r1(c), f: r1(f) } : mealSum.p || mealSum.c || mealSum.f ? { p: r1(mealSum.p), c: r1(mealSum.c), f: r1(mealSum.f) } : null
+    if (!totals && !water && !sleep && !type && !note && !meals.length) return null
+    return {
+      d,
+      // this week: the meals themselves (their sum is the day); earlier: the day's total
+      items: thisWeek && meals.length ? meals : null,
+      item: !(thisWeek && meals.length) && totals ? { id: 'tt-' + d, name: 'Tracker', ...totals, t: new Date(d + 'T20:00:00').getTime() } : null,
+      water: water > 0 && water <= 15 ? water : 0, sleep: sleep > 0 && sleep <= 24 ? sleep : 0, type, note
+    }
   }).filter(Boolean).sort((a, b) => (a.d < b.d ? -1 : 1))
+
+  // Bests from before the tracker (priorBests: { exercise name: weight }): one marked session the day
+  // before the first workout, so they stay in each lift's history and its records.
+  const prior = Object.entries(payload?.priorBests && typeof payload.priorBests === 'object' ? payload.priorBests : {})
+    .map(([name, w]) => ({ name, w: num(w) })).filter(x => x.name && x.w > 0)
+  if (prior.length) {
+    const firstD = workouts.length ? workouts[0].d : (today || isoOfDate(new Date()))
+    const dd = (() => { const x = new Date(firstD + 'T12:00:00'); x.setDate(x.getDate() - 1); return isoOfDate(x) })()
+    const entries = prior.map(x => ({ id: exId(x.name), sets: [{ w: x.w, r: 1, done: true }], topW: x.w, note: 'Tracker öncesi rekor' })).filter(e => e.id)
+    if (entries.length) {
+      const start = new Date(dd + 'T18:00:00').getTime()
+      workouts.unshift({ id: 'tt-w-prior-bests', d: dd, start, end: start, routineId: null, name: 'Önceki rekorlar (tracker)', entries, prs: [], vol: 0 })
+    }
+  }
 
   // Custom exercises this import actually uses, that the profile does not have yet.
   const used = new Set([...routines.flatMap(r => r.ex.map(e => e.id)), ...workouts.flatMap(w => w.entries.map(e => e.id))])
@@ -146,7 +198,7 @@ export function convertTracker(payload, existingCustom = [], { stableIds = false
 
   const measurements = measurementsFromTracker(payload?.measurements)
   const { cardio, supps } = dailyFromTracker(payload)
-  return { routines, workouts, bodyweight, nutrition, measurements, cardio, supps, customEx, linked, programName: program?.name || '' }
+  return { routines, workouts, bodyweight, nutrition, measurements, cardio, supps, customEx, linked, programName: program?.name || '', priorBests: prior.length }
 }
 
 /**
@@ -165,20 +217,37 @@ export function applyTrackerImport(S, conv, { now = new Date().toISOString() } =
   S.workouts = S.workouts || []
   S.bodyweight = S.bodyweight || []
   S.exWeights = S.exWeights || {}
-  const w = mergeImport(S, { kind: 'workouts', workouts: conv.workouts, customEx: [] })
+  // Tracker workouts go in by their own (stable) id, never by date: a day that also has a workout
+  // logged in this app keeps both. (mergeImport skips any day that already has a workout — right for
+  // a Hevy export, a loss here.)
+  const haveIds = new Set(S.workouts.map(x => x?.id))
+  const freshW = conv.workouts.filter(x => !haveIds.has(x.id))
+  S.workouts = [...S.workouts, ...freshW].sort((a, b) => (a.d < b.d ? -1 : 1))
+  freshW.forEach(x => x.entries.forEach(e => {
+    const mx = Math.max(0, ...e.sets.map(z => z.w || 0), e.topW || 0)
+    if (mx > 0 && x.id !== 'tt-w-prior-bests') { const cur = S.exWeights[e.id]; if (!cur || x.d >= cur.d) S.exWeights[e.id] = { w: mx, d: x.d } }
+  }))
+  const w = { added: freshW.length, skipped: conv.workouts.length - freshW.length }
   const b = mergeImport(S, { kind: 'bodyweight', bodyweight: conv.bodyweight })
   // Nutrition: the tracker's day totals, where this app has nothing of its own for that field.
   let days = 0
   S.nutrition = S.nutrition && typeof S.nutrition === 'object' ? S.nutrition : {}
+  S.dayNotes = S.dayNotes && typeof S.dayNotes === 'object' ? S.dayNotes : {}
   for (const n of conv.nutrition || []) {
     const day = S.nutrition[n.d] && typeof S.nutrition[n.d] === 'object' ? S.nutrition[n.d] : {}
     let touched = false
-    // The tracker's totals go in only where this app has none of its own for the day.
-    if (n.item && totalsOf(day).kcal === 0) { day.p = n.item.p; day.c = n.item.c; day.f = n.item.f; delete day.items; delete day.del; touched = true }
+    // Food goes in only where this app has none of its own for the day; never on top of it.
+    if (totalsOf(day).kcal === 0) {
+      if (n.items?.length) { day.items = n.items.map(x => ({ ...x })); delete day.del; touched = true }
+      else if (n.item) { day.p = n.item.p; day.c = n.item.c; day.f = n.item.f; delete day.items; delete day.del; touched = true }
+    }
     if (n.water && !day.water) { day.water = n.water; touched = true }
     if (n.sleep && !day.sleep) { day.sleep = n.sleep; touched = true }
+    if (n.type && !day.type) { day.type = n.type; touched = true }
     if (touched) { day._ts = Date.now(); S.nutrition[n.d] = day; days++ }
+    if (n.note && !S.dayNotes[n.d]) S.dayNotes[n.d] = { text: n.note, t: new Date(n.d + 'T21:00:00').getTime() }
   }
+
   // Body measurements: days this app has none for (never over one entered or removed here).
   let meas = 0
   const have = new Set((Array.isArray(S.measurements) ? S.measurements : []).map(m => m?.d))
@@ -218,4 +287,27 @@ export function trackerPlan(payload, memberCustom = []) {
   const used = new Set(conv.routines.flatMap(r => r.ex.map(e => e.id)))
   const customEx = [...conv.customEx.filter(c => used.has(c.id)), ...memberCustom.filter(c => c && used.has(c.id) && !conv.customEx.some(x => x.id === c.id))]
   return { routines: conv.routines, week: defaultWeek(conv.routines.map(r => r.id)), customEx, programName: conv.programName }
+}
+
+/**
+ * After the import: is everything from the tracker here? Per kind, how many of the tracker's
+ * records this state holds. A day's food counts as here when the day has food of its own too.
+ */
+export function verifyImport(conv, S) {
+  const has = (list, key) => new Set((list || []).map(key))
+  const wIds = has(S?.workouts, w => w?.id)
+  const bw = has(S?.bodyweight, b => b?.d)
+  const meas = has((S?.measurements || []).filter(m => !m?.del), m => m?.d)
+  const food = d => totalsOf(S?.nutrition?.[d]).kcal > 0
+  const cardio = d => (S?.cardio?.[d]?.items || []).length > 0
+  const nutDays = (conv.nutrition || []).filter(n => n.item || n.items?.length)
+  const rows = [
+    ['antrenman', conv.workouts.length, conv.workouts.filter(w => wIds.has(w.id)).length],
+    ['kilo', conv.bodyweight.length, conv.bodyweight.filter(b => bw.has(b.d)).length],
+    ['ölçüm', (conv.measurements || []).length, (conv.measurements || []).filter(m => meas.has(m.d)).length],
+    ['beslenme günü', nutDays.length, nutDays.filter(n => food(n.d)).length],
+    ['kardiyo günü', Object.keys(conv.cardio || {}).length, Object.keys(conv.cardio || {}).filter(cardio).length],
+    ['günlük not', (conv.nutrition || []).filter(n => n.note).length, (conv.nutrition || []).filter(n => n.note && S?.dayNotes?.[n.d]?.text).length]
+  ].filter(r => r[1] > 0)
+  return { rows: rows.map(([label, want, got]) => ({ label, want, got, ok: got >= want })), ok: rows.every(r => r[2] >= r[1]) }
 }

@@ -181,16 +181,16 @@ describe('tracker payload', () => {
     _setTestHooks({ fetch: async (url, init) => {
       if (url.includes('/userdata/')) {
         fb.calls.push({ url, init })
-        const f = url.includes('mask.fieldPaths=payload') ? { payload: { stringValue: '{"workouts":[]}' } } : { displayName: { stringValue: 'Seda' } }
+        const f = url.includes('mask.fieldPaths=payload') ? { payload: { stringValue: '{"workouts":[]}' }, workoutTimers: { mapValue: { fields: { '2026-09-01': { mapValue: { fields: { totalSec: { integerValue: '3600' } } } } } } } } : { displayName: { stringValue: 'Seda' } }
         return { ok: true, status: 200, json: async () => ({ fields: f }) }
       }
       return base(url, init)
     } })
     await post('/api/login/password', { name: 'uye@x.com', password: 'dogru' })
-    expect(await firebaseApi('/api/tracker')).toEqual({ payload: '{"workouts":[]}' })
+    expect(await firebaseApi('/api/tracker')).toEqual({ payload: '{"workouts":[]}', workoutTimers: { '2026-09-01': { totalSec: 3600 } }, mealLog: null })
     const ud = fb.calls.filter(c => c.url.includes('/userdata/'))
     expect(ud.every(c => !c.init.method || c.init.method === 'GET')).toBe(true)
-    expect(ud.some(c => c.url.includes('/userdata/U1?mask.fieldPaths=payload'))).toBe(true)
+    expect(ud.some(c => c.url.includes('/userdata/U1?mask.fieldPaths=payload&mask.fieldPaths=workoutTimers&mask.fieldPaths=mealLog'))).toBe(true)
   })
   it('answers null when the member has no tracker document', async () => {
     await post('/api/login/password', { name: 'uye@x.com', password: 'dogru' })
@@ -581,7 +581,7 @@ describe('tracker payload for the coach', () => {
   it('reads a member\'s payload, never writes', async () => {
     fb.docs.set('userdata/U1', { fields: { payload: { stringValue: '{"programs":[]}' } }, updateTime: 'a' })
     await post('/api/login/password', { name: 'mertcan.tasyurekk@gmail.com', password: 'a' })
-    expect(await firebaseApi('/api/coach/tracker-payload?uid=U1')).toEqual({ payload: '{"programs":[]}' })
+    expect(await firebaseApi('/api/coach/tracker-payload?uid=U1')).toEqual({ payload: '{"programs":[]}', workoutTimers: null, mealLog: null })
     expect(await firebaseApi('/api/coach/tracker-payload?uid=NOPE')).toEqual({ payload: null })
   })
 })
