@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect } from 'vitest'
-import { parseReps, readPayload, convertTracker, applyTrackerImport, trackerPlan, defaultWeek, verifyImport } from './tracker-import.js'
+import { parseReps, readPayload, convertTracker, applyTrackerImport, trackerPlan, defaultWeek, verifyImport, importOutdated, IMPORT_VERSION } from './tracker-import.js'
 import { DEF } from '../store/useStore.js'
 import { EXIDX } from './exercises.js'
 
@@ -125,7 +125,7 @@ describe('applyTrackerImport', () => {
     expect(S.routines).toHaveLength(2)
     expect(S.customEx).toHaveLength(2)
     expect(S.bodyweight.map(b => b.w)).toEqual([84.2, 83.9])
-    expect(S.trackerImport).toEqual({ at: 'T1' })
+    expect(S.trackerImport).toEqual({ at: 'T1', v: IMPORT_VERSION })
     const benchId = S.routines[0].ex[0].id
     expect(S.exWeights[benchId]).toEqual({ w: 62.5, d: '2026-09-01' })
 
@@ -138,11 +138,11 @@ describe('applyTrackerImport', () => {
     expect(S.routines).toHaveLength(2)
     expect(S.customEx).toHaveLength(2)
     expect(S.workouts.map(w => w.d)).toEqual(['2026-09-01', '2026-09-03', '2026-09-03', '2026-09-03', '2026-09-08'])
-    expect(S.trackerImport).toEqual({ at: 'T2', firstAt: 'T1' })
+    expect(S.trackerImport).toEqual({ at: 'T2', v: IMPORT_VERSION, firstAt: 'T1' })
 
     const r3 = applyTrackerImport(S, convertTracker(later, S.customEx), { now: 'T3' })
     expect(r3).toMatchObject({ routines: 0, workouts: 0, weights: 0, customs: 0 })
-    expect(S.trackerImport).toEqual({ at: 'T3', firstAt: 'T1' })
+    expect(S.trackerImport).toEqual({ at: 'T3', v: IMPORT_VERSION, firstAt: 'T1' })
   })
 })
 
@@ -301,5 +301,27 @@ describe('verification after the import', () => {
     const v2 = verifyImport(conv, S)
     expect(v2.ok).toBe(false)
     expect(v2.rows.find(r => r.label === 'antrenman')).toMatchObject({ want: 3, got: 2, ok: false })
+  })
+})
+
+describe('an import made by an older version', () => {
+  it('runs again and brings the new kinds, without doubling anything', () => {
+    const payload = { workouts: [{ id: 'w1', date: '2026-09-01', exercises: [{ name: 'barbell bench press', sets: [{ weight: 60, reps: 8 }] }] }],
+      measurements: [{ id: 'm1', date: '2026-08-20', waistNavel: 75 }, { id: 'm2', date: '2026-09-10', waistNavel: 73 }],
+      daily: { '2026-09-01': { weight: 61 } } }
+    const S = clone(DEF)
+    // what an early import left behind: the workout, the weight, a stamp without a version — no measurements
+    S.workouts = [{ id: 'ttk2x9old', d: '2026-09-01', name: 'Antrenman', vol: 480, entries: [{ id: '0025', sets: [{ w: 60, r: 8, done: true }] }], prs: [] }]
+    S.bodyweight = [{ d: '2026-09-01', w: 61, t: 1 }]
+    S.measurements = [{ d: '2026-09-28', waistNavel: 72, t: 5 }]       // entered in the new app since
+    S.trackerImport = { at: 'early' }
+    expect(importOutdated(S)).toBe(true)
+    applyTrackerImport(S, convertTracker(payload), { now: 'T' })
+    expect(S.measurements.map(m => m.d)).toEqual(['2026-08-20', '2026-09-10', '2026-09-28'])
+    expect(S.bodyweight).toHaveLength(1)
+    expect(S.workouts.map(w => w.id)).toEqual(['ttk2x9old'])          // the early import's copy, not a second one
+    expect(verifyImport(convertTracker(payload), S).rows.find(r => r.label === 'antrenman')).toMatchObject({ want: 1, got: 1, ok: true })
+    expect(S.trackerImport).toMatchObject({ v: IMPORT_VERSION, firstAt: 'early' })
+    expect(importOutdated(S)).toBe(false)
   })
 })

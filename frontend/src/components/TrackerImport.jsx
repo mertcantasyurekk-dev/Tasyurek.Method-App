@@ -4,7 +4,7 @@ import { todayISO } from '../lib/format.js'
 import { useStore } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
 import { confirmSheet } from '../sheets.jsx'
-import { readPayload, convertTracker, applyTrackerImport } from '../lib/tracker-import.js'
+import { readPayload, convertTracker, applyTrackerImport, importOutdated, IMPORT_VERSION } from '../lib/tracker-import.js'
 
 const toast = m => useUI.getState().toast(m)
 
@@ -55,8 +55,8 @@ export async function importFromTracker() {
 }
 
 // The first time someone opens this app, their tracker history comes over by itself — nobody has to
-// find the button. Once per profile (S.trackerImport is the stamp; it syncs, so another device does
-// not import again), a few seconds after start so the first sync has landed. Importing twice is
+// find the button. Once per profile and import version (S.trackerImport is the stamp, with v; it syncs,
+// so another device does not import again; an older v imports again to bring what is new), a few seconds after start so the first sync has landed. Importing twice is
 // harmless anyway: workouts have stable ids, days already here win.
 const autoTried = new Set()   // per account: signing out and in as someone else tries for them too
 export function autoImportFromTracker() {
@@ -65,15 +65,15 @@ export function autoImportFromTracker() {
   autoTried.add(uid)
   setTimeout(async () => {
     const st = useStore.getState()
-    if (st.user?.id !== uid || st.S?.trackerImport) return
+    if (st.user?.id !== uid || !importOutdated(st.S)) return
     let payload, extra = {}
     try { const r = await api('/api/tracker'); payload = readPayload(r.payload); extra = { timers: r.workoutTimers, mealLog: r.mealLog, today: todayISO() } } catch { return }
     if (!payload) return
     const S = useStore.getState().S
-    if (S.trackerImport) return
+    if (!importOutdated(S)) return
     const conv = convertTracker(payload, S.customEx || [], extra)
     if (!conv.routines.length && !conv.workouts.length && !conv.bodyweight.length && !conv.nutrition?.length && !conv.measurements?.length && !Object.keys(conv.cardio || {}).length) {
-      useStore.getState().update(s => { s.trackerImport = { at: new Date().toISOString(), empty: true } })
+      useStore.getState().update(s => { s.trackerImport = { at: new Date().toISOString(), v: IMPORT_VERSION, empty: true } })
       return
     }
     let res

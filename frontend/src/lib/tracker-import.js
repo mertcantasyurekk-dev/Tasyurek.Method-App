@@ -57,6 +57,14 @@ export function readPayload(raw) {
  * Work out everything the import would add, without touching state.
  * `existingCustom` is the profile's S.customEx: a name already there is reused, not duplicated.
  */
+// The import's version. Raise it whenever the import learns to bring something new: a profile
+// imported by an older version is imported again on its next start (autoImportFromTracker), which is
+// safe — workouts merge by id, days and entries already here win — and brings the new kinds over.
+// 1: workouts, weights, programs, nutrition totals · 2: + measurements, cardio, supplements, notes,
+// durations, day types, this week's meals, prior bests, id-based workout merge.
+export const IMPORT_VERSION = 2
+export const importOutdated = S => !S?.trackerImport || (Number(S.trackerImport.v) || 1) < IMPORT_VERSION
+
 export function convertTracker(payload, existingCustom = [], { stableIds = false, timers = null, mealLog = null, today = null } = {}) {
   const custom = new Map()   // clean name -> custom exercise (existing or new)
   existingCustom.forEach(c => { if (c && c.n) custom.set(clean(c.n), c) })
@@ -221,7 +229,11 @@ export function applyTrackerImport(S, conv, { now = new Date().toISOString() } =
   // logged in this app keeps both. (mergeImport skips any day that already has a workout — right for
   // a Hevy export, a loss here.)
   const haveIds = new Set(S.workouts.map(x => x?.id))
-  const freshW = conv.workouts.filter(x => !haveIds.has(x.id))
+  // An earlier import (version 1) gave the same tracker workouts random ids: the same day, name and
+  // volume already here is that workout, not a new one.
+  const sameAs = x => S.workouts.some(y => y && y.d === x.d && (y.name || '') === (x.name || '') && Math.abs((Number(y.vol) || 0) - (Number(x.vol) || 0)) < 0.5
+    && (y.entries || []).length === (x.entries || []).length)
+  const freshW = conv.workouts.filter(x => !haveIds.has(x.id) && !sameAs(x))
   S.workouts = [...S.workouts, ...freshW].sort((a, b) => (a.d < b.d ? -1 : 1))
   freshW.forEach(x => x.entries.forEach(e => {
     const mx = Math.max(0, ...e.sets.map(z => z.w || 0), e.topW || 0)
@@ -263,7 +275,7 @@ export function applyTrackerImport(S, conv, { now = new Date().toISOString() } =
   for (const [d, day] of Object.entries(conv.cardio || {})) { if (!S.cardio[d]) { S.cardio[d] = { ...day, items: day.items.map(x => ({ ...x })) }; cardioDays++ } }
   S.supps = S.supps && typeof S.supps === 'object' ? S.supps : {}
   for (const [d, day] of Object.entries(conv.supps || {})) if (!S.supps[d]) S.supps[d] = { on: { ...day.on }, _ts: day._ts }
-  S.trackerImport = { at: now, ...(first ? {} : { firstAt: S.trackerImport.firstAt || S.trackerImport.at }) }
+  S.trackerImport = { at: now, v: IMPORT_VERSION, ...(first ? {} : { firstAt: S.trackerImport.firstAt || S.trackerImport.at }) }
   return { routines, workouts: w.added, workoutsSkipped: w.skipped, weights: b.added, days, measurements: meas, cardioDays, customs: conv.customEx.length }
 }
 
@@ -302,7 +314,8 @@ export function verifyImport(conv, S) {
   const cardio = d => (S?.cardio?.[d]?.items || []).length > 0
   const nutDays = (conv.nutrition || []).filter(n => n.item || n.items?.length)
   const rows = [
-    ['antrenman', conv.workouts.length, conv.workouts.filter(w => wIds.has(w.id)).length],
+    ['antrenman', conv.workouts.length, conv.workouts.filter(w => wIds.has(w.id) || (S?.workouts || []).some(y => y && y.d === w.d && (y.name || '') === (w.name || '')
+      && Math.abs((Number(y.vol) || 0) - (Number(w.vol) || 0)) < 0.5)).length],
     ['kilo', conv.bodyweight.length, conv.bodyweight.filter(b => bw.has(b.d)).length],
     ['ölçüm', (conv.measurements || []).length, (conv.measurements || []).filter(m => meas.has(m.d)).length],
     ['beslenme günü', nutDays.length, nutDays.filter(n => food(n.d)).length],

@@ -141,6 +141,10 @@ silinen gün `{ d, del: true, t }` olarak kalır. Senkron: gün bazında son yaz
   bir gün önce). Tracker antrenmanları **kimlikle** birleşir (tarihle değil): yeni uygulamada aynı güne antrenman olsa da kaybolmaz.
   Aktarılmayan: kayıtlı öğün şablonları (`mealTemplates`, yeni uygulamada özellik yok), önceki haftaların öğün detayı
   (karar gereği sadece toplam), seans içi hedef notları; ısınma setleri tracker'da ayırt edilmediği için normal set olarak gelir.
+- **Aktarım sürümü** (`IMPORT_VERSION`, şu an 2): damgada `v` tutulur. Daha eski sürümle aktarım yapmış profilde
+  (örn. ölçü/kardiyo aktarımı yazılmadan önce elle aktaranlar) otomatik aktarım bir kez daha çalışır ve yenileri getirir.
+  Sürüm 1'in rastgele kimlikli antrenmanları aynı gün + ad + hacimle eşleşir, çift olmaz. Aktarım yeni veri türü
+  öğrendiğinde `IMPORT_VERSION` artırılmalı.
 - **Doğrulama** (`verifyImport`): geçiş ekranında, aktarım yapılmış her üye ve koç için tür tür "tracker / yeni" sayıları
   (✓ ya da ⚠ eksik).
 - Tracker'dan taşınan değerlendirmeler `imported: true` taşır: Ana sayfadaki "Koçundan" kartında "yeni" görünmez, arşivde durur.
