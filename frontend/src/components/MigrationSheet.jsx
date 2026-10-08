@@ -9,6 +9,7 @@ import { api } from '../lib/api.js'
 import { useUI } from '../store/useUI.js'
 import { readPayload, convertTracker, verifyImport } from '../lib/tracker-import.js'
 import { useStore } from '../store/useStore.js'
+import { fromTracker as membershipFromTracker } from '../lib/membership.js'
 import { loadTrackerPlan, assignTrackerPlan } from './TrackerTransfer.jsx'
 import { fmtDate, todayISO } from '../lib/format.js'
 import { Button, Check } from './ui.jsx'
@@ -73,7 +74,7 @@ function Migration({ members, onDone, close }) {
           ])
           const payload = readPayload(pay.payload)
           const tp = payload ? await loadTrackerPlan(mm.uid, m.state?.customEx) : null
-          out.push({ uid: mm.uid, name: mm.name, m, tp, extras, notes, preview: previewOf(payload, m.state?.customEx, { timers: pay.workoutTimers, mealLog: pay.mealLog, today: todayISO() }, m.state) })
+          out.push({ uid: mm.uid, name: mm.name, m, tp, extras, notes, membership: membershipFromTracker(payload), preview: previewOf(payload, m.state?.customEx, { timers: pay.workoutTimers, mealLog: pay.mealLog, today: todayISO() }, m.state) })
         } catch (e) { out.push({ uid: mm.uid, name: mm.name, error: e.message }) }
         if (on) setRows([...out])
       }
@@ -90,6 +91,7 @@ function Migration({ members, onDone, close }) {
     if (!r.m.supplements && r.extras?.supplements?.length) t.push('takviyeler')
     if (!r.notes?.note && !r.notes?.goal && !r.notes?.reports?.length && (r.extras?.note || r.extras?.goal || r.extras?.reports?.length)) t.push('not/raporlar')
     if (!(r.m.reviews || []).length && r.extras?.reviews?.length) t.push('değerlendirmeler')
+    if (!r.m.membership && r.membership) t.push('üyelik')
     return t
   }
 
@@ -116,6 +118,7 @@ function Migration({ members, onDone, close }) {
           for (const v of r.extras.reviews) await api('/api/coach/review', { method: 'PUT', body: JSON.stringify({ uid: r.uid, text: v.text, week: v.week, sentAt: v.sentAt }) })
           done.push(`${r.extras.reviews.length} değerlendirme`)
         }
+        if (t.includes('üyelik')) { await api('/api/coach/membership', { method: 'PUT', body: JSON.stringify({ uid: r.uid, membership: r.membership }) }); done.push('üyelik') }
         out.push(`✓ ${r.name}: ${done.length ? done.join(', ') : 'koç tarafı zaten tamam'}`)
       } catch (e) { out.push(`✗ ${r.name}: ${done.length ? done.join(', ') + ' tamam, sonra ' : ''}${e.data?.error || e.message}`) }
       setLog([...out])

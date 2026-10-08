@@ -5,6 +5,7 @@
 import { totalsOf } from './nutrition-core.js'
 import { cardioOf, workoutCardio, isCardioOnly } from './daily.js'
 import { entriesOf as measurementsOf } from './measurements.js'
+import { daysLeft, coachText } from './membership.js'
 
 const DAYS = 21
 const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -60,9 +61,13 @@ export function statsOf(sum, today = iso(new Date())) {
 }
 
 // What deserves the coach's eye, most pressing first. level: 3 act now · 2 look · 1 note.
-export function attentionOf({ joined, planAt, stats, targets }) {
+export function attentionOf({ joined, planAt, stats, targets, membership, today }) {
   const out = []
-  if (!joined) return [{ key: 'not-joined', level: 1, text: 'Yeni uygulamayı açmadı' }]
+  // The membership first: ending within three days (or over) is the most pressing thing there is.
+  const ml = daysLeft(membership, today)
+  if (ml !== null && ml <= 3) out.push({ key: 'membership', level: 3, text: coachText(ml) })
+  else if (ml !== null && ml <= 7) out.push({ key: 'membership', level: 2, text: coachText(ml) })
+  if (!joined) return [...out, { key: 'not-joined', level: 1, text: 'Yeni uygulamayı açmadı' }].sort((a, b) => b.level - a.level)
   if (!planAt) out.push({ key: 'no-plan', level: 2, text: 'Program atanmamış' })
   if (!stats) return out
   if (stats.sinceActive === null || stats.sinceActive >= 3) out.push({ key: 'inactive', level: 3, text: stats.sinceActive === null ? 'Hiç kayıt yok' : `${stats.sinceActive} gündür kayıt yok` })

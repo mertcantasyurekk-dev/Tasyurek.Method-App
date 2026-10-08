@@ -23,6 +23,7 @@ import { migrationSheet } from '../components/MigrationSheet.jsx'
 import { FIELDS as MEAS_FIELDS, changesOf, latestOf as lastMeasurement, daysSinceLast as measAgo } from '../lib/measurements.js'
 import { weekProgress, suppAdherence } from '../lib/daily.js'
 import { buildSummary, statsOf, attentionOf, attentionScore } from '../lib/member-summary.js'
+import { daysLeft, levelOf, colorOf, coachText, extendMonths, cleanMembership } from '../lib/membership.js'
 import SupplementsEditor from '../components/SupplementsEditor.jsx'
 import { totalsOf, kcalOf } from '../lib/nutrition.js'
 
@@ -53,7 +54,7 @@ export function CoachPanel() {
   const today = todayISO()
   const rows = (members || []).map(m => {
     const stats = statsOf(m.summary, today)
-    const flags = attentionOf({ joined: m.joined, planAt: m.planAt, stats, targets: m.targets })
+    const flags = attentionOf({ joined: m.joined, planAt: m.planAt, stats, targets: m.targets, membership: m.membership, today })
     return { ...m, stats, flags, score: attentionScore(flags) }
   })
   const needs = rows.filter(r => r.flags.some(f => f.level >= 2)).sort((a, b) => b.score - a.score)
@@ -180,6 +181,8 @@ export function CoachMember() {
       {m.supplements?.length > 0 && <Row icon="checkCircle" title="Takviye uyumu (7 gün)" value={(() => { const a = suppAdherence({ ...st, coachSupplements: m.supplements }, todayISO(), 7); return a === null ? '—' : '%' + a })()} />}
       <Row icon="target" title="Son ölçüm" value={lastMeasurement(st) ? `${fmtDate(lastMeasurement(st).d)} · ${measAgo(st, todayISO())} gün önce` : '—'} />
     </Section>
+
+    <MembershipSection uid={uid} name={info.name} m={m} onSaved={load} />
 
     <CoachWeekly uid={uid} info={info} m={m} onChanged={load} />
 
@@ -392,6 +395,38 @@ function SupplementsSection({ uid, name, m, onSaved }) {
   return <Section title="Takviyeler — düzenle">
     <div style={{ padding: '10px 14px 14px' }}>
       <SupplementsEditor initial={list} busy={busy} onCancel={() => setList(null)} onSave={l => save(l)} />
+    </div>
+  </Section>
+}
+
+/* ------------------------------------------------------------------ membership ------------------ */
+
+function MembershipSection({ uid, name, m, onSaved }) {
+  const cur = m.membership || null
+  const [start, setStart] = useState(cur?.start || '')
+  const [renewal, setRenewal] = useState(cur?.renewal || '')
+  const [busy, setBusy] = useState(false)
+  const n = daysLeft(cur, todayISO())
+  const dirty = (start || '') !== (cur?.start || '') || (renewal || '') !== (cur?.renewal || '')
+  const extend = months => { const x = extendMonths({ start: start || null, renewal: renewal || null }, months, todayISO()); setStart(x.start); setRenewal(x.renewal) }
+  const save = async () => {
+    const mm = renewal ? cleanMembership({ start: start || null, renewal }) : null
+    setBusy(true)
+    try { await api('/api/coach/membership', { method: 'PUT', body: JSON.stringify({ uid, membership: mm }) }); toast(mm ? `${name}: üyelik ${fmtDate(mm.renewal, true)} tarihine kadar` : `${name}: üyelik tarihi kaldırıldı`); onSaved && onSaved() }
+    catch (e) { toast(e.data?.error || e.message) } finally { setBusy(false) }
+  }
+  return <Section title="Üyelik" footer="Üye ana sayfasında kalan günü görür; 3 gün kala her gün hatırlatılır.">
+    <Row icon="calendar" title={<span style={{ color: n === null ? undefined : colorOf(levelOf(n)), fontWeight: 600 }}>{coachText(n)}</span>}
+      subtitle={cur?.renewal ? `Yenileme: ${fmtDate(cur.renewal, true)}` : 'Başlangıç ve yenileme tarihini gir'} />
+    <div style={{ padding: '10px 14px 14px' }}>
+      <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+        <label className="small muted" style={{ flex: '1 1 140px' }}>Başlangıç<br /><input type="date" className="field" value={start} onChange={e => setStart(e.target.value)} style={{ width: '100%', marginTop: 4 }} /></label>
+        <label className="small muted" style={{ flex: '1 1 140px' }}>Yenileme<br /><input type="date" className="field" value={renewal} onChange={e => setRenewal(e.target.value)} style={{ width: '100%', marginTop: 4 }} /></label>
+      </div>
+      <div className="row" style={{ gap: 6, margin: '10px 0 12px', flexWrap: 'wrap' }}>
+        {[1, 3, 6].map(k => <button key={k} className="chip nocap" onClick={() => extend(k)}>+{k} ay</button>)}
+      </div>
+      <Button variant={dirty ? 'primary' : undefined} icon="checkCircle" disabled={!dirty || busy} onClick={save}>{busy ? 'Kaydediliyor…' : dirty ? 'Üyeliği kaydet' : 'Kaydedildi'}</Button>
     </div>
   </Section>
 }

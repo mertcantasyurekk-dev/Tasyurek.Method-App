@@ -94,6 +94,16 @@ Koç panelinde üye detayı (`views/CoachWeekly.jsx`, biçimler `lib/coach360.js
   hep durur. Takviye düzenleyicisi ortak bileşen (`components/SupplementsEditor.jsx`), koç panelinde üyeler için de o.
 - Tracker'dan: günlük kardiyo, takviye işaretleri (üye aktarımı); takviye listesi ve haftalık hedefler (koçun program aktarımı).
 
+## Üyelik (kalan gün)
+
+`lib/membership.js`, üye kartı `components/MembershipCard.jsx`, koç bölümü `CoachPanel.jsx → MembershipSection`.
+`coachplan/{uid}.membership = { start, renewal }` (koç yazar, `PUT /api/coach/membership`; üyede `state.coachMembership`).
+Renkler tracker'daki gibi: 7 günden fazla yeşil, ≤7 turuncu, ≤3 / bugün / geçmiş kırmızı. Üye Ana sayfanın en üstünde kalan
+günü ve kullanılan süreyi görür; 3 gün kala (ve bitince) günde bir kez hatırlatma penceresi (`state.membershipNoticeOn`).
+Koç: üye detayında başlangıç/yenileme, **+1 / +3 / +6 ay** (yenileme tarihinden; geçmişse bugünden; ay sonu taşmaz).
+"Dikkat gerekenler"de ≤3 gün / bitmiş kırmızı, ≤7 gün turuncu, en üstte. Tracker'daki `payload.customMembership`
+geçiş ekranında "Koç tarafını taşı" ile gelir. Gerçek telefon bildirimi (uygulama kapalıyken) sunucu ister — yok.
+
 ## Koç paneli: üye özeti ve "Dikkat gerekenler"
 
 `lib/member-summary.js`. Üye her kaydettiğinde adaptör `ogstate/{uid}.summary` alanına ~1 KB özet yazar (son 21 gün,

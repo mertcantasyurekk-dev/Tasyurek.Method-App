@@ -12,6 +12,7 @@ import { maybeAutoBackup } from '../components/Backup.jsx'
 import MeasurementsCard from '../components/MeasurementsCard.jsx'
 import { DailyMessageCard, WeekCard, SupplementsCard } from '../components/DailyCards.jsx'
 import { autoImportFromTracker } from '../components/TrackerImport.jsx'
+import MembershipCard from '../components/MembershipCard.jsx'
 import { bwSheet, goalSheet, dayOverrideSheet, calendarSheet, startFlow, starterPlanSheet, bwDeltaColor, weighInsSheet } from '../sheets.jsx'
 import LineChart from '../components/LineChart.jsx'
 import Icon from '../components/Icon.jsx'
@@ -125,6 +126,9 @@ export default function Home() {
         </Button>
       </div>}
     </div>
+
+    {/* Taşyürek: days left of the membership the coach keeps for this member. */}
+    {FIREBASE && coached && <MembershipCard />}
 
     {/* Taşyürek: the coach's latest weekly message. */}
     {FIREBASE && <CoachMessageCard />}

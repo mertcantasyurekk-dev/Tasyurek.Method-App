@@ -13,6 +13,7 @@
 
 import { compactNutrition } from './nutrition-core.js'   // the weekly seal: meals of past weeks are never stored
 import { buildSummary } from './member-summary.js'      // the ~1 KB the coach panel reads instead of the state
+import { cleanMembership } from './membership.js'
 
 export const FIREBASE = import.meta.env?.VITE_FIREBASE === '1'
 
@@ -121,11 +122,11 @@ const planUrl = uid => `${DOCS()}/coachplan/${encodeURIComponent(uid)}`
 
 async function readPlan(a, uid = a.uid) {
   const { r, body } = await jsonFetch(planUrl(uid), { headers: { Authorization: 'Bearer ' + a.idToken } })
-  if (r.status === 404) return { exists: false, plan: null, targets: null, reviews: null, supplements: null, rev: 0, updateTime: null }
+  if (r.status === 404) return { exists: false, plan: null, targets: null, reviews: null, supplements: null, membership: null, rev: 0, updateTime: null }
   if (!r.ok) throw err(r.status, body?.error?.message || 'plan read failed')
   const f = body.fields || {}
   const json = v => { try { return v?.stringValue ? JSON.parse(v.stringValue) : null } catch { return null } }
-  return { exists: true, plan: json(f.plan), targets: json(f.targets), reviews: json(f.reviews), supplements: json(f.supplements), rev: Number(f.rev?.integerValue || 0), updateTime: body.updateTime }
+  return { exists: true, plan: json(f.plan), targets: json(f.targets), reviews: json(f.reviews), supplements: json(f.supplements), membership: json(f.membership), rev: Number(f.rev?.integerValue || 0), updateTime: body.updateTime }
 }
 
 // The member's copy with the coach's program in place of their own routines and week.
@@ -157,6 +158,8 @@ async function readCombined(a) {
     if (Array.isArray(p.reviews) && p.reviews.length) state.coachReviews = p.reviews; else delete state.coachReviews
     // The coach's supplement list for this member (the tracker's customSupplements shape).
     if (Array.isArray(p.supplements)) state.coachSupplements = p.supplements; else delete state.coachSupplements
+    // The membership dates the coach keeps for this member.
+    if (p.membership?.renewal) state.coachMembership = p.membership; else delete state.coachMembership
   }
   // A coached member's sessions start from the coach's prescription, never from their last session.
   if (state && state.startFrom === 'last') state.startFrom = 'plan'
@@ -265,7 +268,7 @@ async function coachMembers(a) {
   const warnings = []
   const soft = p => p.catch(e => { warnings.push(e.message); return [] })
   // Only each member's ~1 KB summary, not their state (lib/member-summary.js).
-  const [states, plans] = await Promise.all([soft(listDocs(a, CFG.collection, ['summary', 'rev'])), soft(listDocs(a, 'coachplan', ['planAt', 'targets']))])
+  const [states, plans] = await Promise.all([soft(listDocs(a, CFG.collection, ['summary', 'rev'])), soft(listDocs(a, 'coachplan', ['planAt', 'targets', 'membership']))])
   const og = new Map(states.map(d => [d.id, d]))
   const pl = new Map(plans.map(d => [d.id, d]))
   const json = v => { try { return v?.stringValue ? JSON.parse(v.stringValue) : null } catch { return null } }
@@ -287,7 +290,7 @@ async function coachMembers(a) {
       uid: u.id, email, name: u.fields.displayName?.stringValue || email.split('@')[0] || u.id,
       joined: !!st, summary,
       planAt: p?.fields?.planAt?.timestampValue || null,
-      targets: json(p?.fields?.targets), hasTargets: !!p?.fields?.targets
+      targets: json(p?.fields?.targets), hasTargets: !!p?.fields?.targets, membership: json(p?.fields?.membership)
     })
   }
   out.sort((x, y) => x.name.localeCompare(y.name, 'tr'))
@@ -306,7 +309,7 @@ async function coachMember(a, uid) {
     const email = f.email?.stringValue || ''
     info = { name: f.displayName?.stringValue || email.split('@')[0] || uid, email }
   } catch { /* the uid will do */ }
-  return { info, state, plan: p.plan, targets: p.targets, reviews: p.reviews || [], supplements: Array.isArray(p.supplements) ? p.supplements : null, planRev: p.rev, trackerTargets: await trackerTargetsOf(a, uid) }
+  return { info, state, plan: p.plan, targets: p.targets, reviews: p.reviews || [], supplements: Array.isArray(p.supplements) ? p.supplements : null, membership: p.membership || null, planRev: p.rev, trackerTargets: await trackerTargetsOf(a, uid) }
 }
 
 const cleanPlan = plan => {
@@ -633,6 +636,20 @@ export function cleanSupplements(list) {
   })).filter(g => g.items.length).slice(0, 12)
 }
 
+// One field of the plan document, written by the coach (rev bumped so the member's app notices).
+async function coachPutPlanField(a, uid, field, value) {
+  const cur = await readPlan(a, uid)
+  const pre = cur.exists ? 'currentDocument.updateTime=' + encodeURIComponent(cur.updateTime) : 'currentDocument.exists=false'
+  const { r, body: res } = await jsonFetch(`${planUrl(uid)}?updateMask.fieldPaths=${field}&updateMask.fieldPaths=rev&${pre}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + a.idToken },
+    body: JSON.stringify({ fields: { [field]: value == null ? { nullValue: null } : { stringValue: JSON.stringify(value) }, rev: { integerValue: String(cur.rev + 1) } } })
+  })
+  if (!r.ok) {
+    if (r.status === 400 && /FAILED_PRECONDITION/.test(res?.error?.status || '')) throw err(409, 'Bu arada başka bir değişiklik oldu — tekrar kaydet')
+    throw err(r.status, res?.error?.message || field + ' write failed')
+  }
+}
+
 async function coachPutSupplements(a, body) {
   const uid = String(body?.uid || '')
   if (!uid) throw err(400, 'uid required')
@@ -775,6 +792,14 @@ export async function firebaseApi(path, init = {}) {
       const uid = new URLSearchParams(path.split('?')[1] || '').get('uid')
       if (!uid) throw err(400, 'uid required')
       return trackerExtras(await asCoach(), uid)
+    }
+    case 'PUT /api/coach/membership': {
+      const uid = String(body?.uid || '')
+      if (!uid) throw err(400, 'uid required')
+      const m = body.membership == null ? null : cleanMembership(body.membership)
+      if (body.membership != null && !m) throw err(400, 'Yenileme tarihi gerekli')
+      await coachPutPlanField(await asCoach(), uid, 'membership', m)
+      return { ok: true, membership: m }
     }
     case 'PUT /api/coach/supplements':
       return coachPutSupplements(await asCoach(), body)

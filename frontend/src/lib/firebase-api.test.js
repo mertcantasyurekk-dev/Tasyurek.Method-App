@@ -611,3 +611,21 @@ describe('weekly targets and supplements', () => {
     expect((await firebaseApi('/api/coach/tracker-extra?uid=U2')).supplements).toEqual([{ id: 'ev', label: 'Akşam', items: [{ id: 'mg', name: 'Magnezyum', dose: '400 mg' }] }])
   })
 })
+
+describe('membership', () => {
+  it('the coach sets it, the member sees it, the panel lists it; it can be cleared', async () => {
+    await post('/api/login/password', { name: 'mertcan.tasyurekk@gmail.com', password: 'a' })
+    const PUT = (b) => firebaseApi('/api/coach/membership', { method: 'PUT', body: JSON.stringify(b) })
+    await expect(PUT({ uid: 'U1', membership: { start: '2026-09-01' } })).rejects.toMatchObject({ status: 400 })
+    expect((await PUT({ uid: 'U1', membership: { start: '2026-09-01', renewal: '2026-10-01' } })).membership).toEqual({ start: '2026-09-01', renewal: '2026-10-01' })
+    fb.docs.set('userdata/U1', { fields: { displayName: { stringValue: 'Seda' }, email: { stringValue: 'uye@x.com' } }, updateTime: 'x' })
+    expect((await firebaseApi('/api/coach/members')).members[0].membership).toEqual({ start: '2026-09-01', renewal: '2026-10-01' })
+    await post('/api/logout', {}); await post('/api/login/password', { name: 'uye@x.com', password: 'dogru' })
+    expect((await firebaseApi('/api/data')).state.coachMembership.renewal).toBe('2026-10-01')
+    await expect(PUT({ uid: 'U1', membership: null })).rejects.toMatchObject({ status: 403 })
+    await post('/api/logout', {}); await post('/api/login/password', { name: 'mertcan.tasyurekk@gmail.com', password: 'a' })
+    await PUT({ uid: 'U1', membership: null })
+    await post('/api/logout', {}); await post('/api/login/password', { name: 'uye@x.com', password: 'dogru' })
+    expect((await firebaseApi('/api/data')).state.coachMembership).toBeUndefined()
+  })
+})
