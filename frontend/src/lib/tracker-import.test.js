@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect } from 'vitest'
-import { parseReps, readPayload, convertTracker, applyTrackerImport, trackerPlan, defaultWeek, verifyImport, importOutdated, IMPORT_VERSION } from './tracker-import.js'
+import { parseReps, readPayload, convertTracker, applyTrackerImport, trackerPlan, defaultWeek, verifyImport, importOutdated, IMPORT_VERSION, targetsFromPayload, cleanSupps } from './tracker-import.js'
 import { DEF } from '../store/useStore.js'
 import { EXIDX } from './exercises.js'
 
@@ -323,5 +323,69 @@ describe('an import made by an older version', () => {
     expect(verifyImport(convertTracker(payload), S).rows.find(r => r.label === 'antrenman')).toMatchObject({ want: 1, got: 1, ok: true })
     expect(S.trackerImport).toMatchObject({ v: IMPORT_VERSION, firstAt: 'early' })
     expect(importOutdated(S)).toBe(false)
+  })
+})
+
+describe('the coach\'s own profile: other programs, targets, supplements', () => {
+  const payload = {
+    activeProgramId: 'b1',
+    targets: { protein: 190, carbs: 300, fat: 70, water: 4, sleep: 8 },
+    customMacroTargets: { trainingDay: { protein: 200, carbs: 320, fat: 70 }, offDay: { protein: 200, carbs: 220, fat: 75 } },
+    customWeeklyTargets: { workoutsPerWeek: 6, cardioSessionsPerWeek: 3, cardioMinutesPerWeek: 120 },
+    programs: [
+      { id: 'b1', name: 'Podyum Hazırlık - PPL x2 (Blok 1)', days: [{ id: 'push', label: 'Push A', exercises: [{ name: 'barbell bench press', sets: 4, reps: '6-8' }] }] },
+      { id: 'b0', name: 'Eski Blok', days: [{ id: 'd1', label: 'Gün 1', exercises: [{ name: 'barbell bench press', sets: 3, reps: '10' }, { name: 'Hip Thrust (makine)', sets: 3, reps: '12' }] }] }
+    ]
+  }
+  const supps = [{ id: 'am', label: 'Sabah', items: [{ id: 'd3', name: 'D3 + K2', dose: '5.000 IU', effect: 'bağışıklık' }, { id: 'x', name: '' }] }, { id: 'e', label: 'Boş', items: [] }]
+
+  it('targets and supplements in this app\'s shape; effect text and empty rows dropped', () => {
+    expect(targetsFromPayload(payload)).toEqual({ training: { p: 200, c: 320, f: 70 }, rest: { p: 200, c: 220, f: 75 }, water: 4, sleep: 8, workoutsPerWeek: 6, cardioSessionsPerWeek: 3, cardioMinutesPerWeek: 120 })
+    expect(targetsFromPayload({})).toBeNull()
+    expect(cleanSupps(supps)).toEqual([{ id: 'am', label: 'Sabah', items: [{ id: 'd3', name: 'D3 + K2', dose: '5.000 IU' }] }])
+  })
+  it('a member gets none of it', () => {
+    const c = convertTracker(payload, [], { supplements: supps })
+    expect(c.otherRoutines).toEqual([]); expect(c.myTargets).toBeNull(); expect(c.mySupplements).toEqual([])
+    const S = clone(DEF)
+    const r = applyTrackerImport(S, c, { coach: false })
+    expect(S.myTargets).toBeUndefined(); expect(S.mySupplements).toBeUndefined()
+    expect(r).toMatchObject({ otherRoutines: 0, targets: false, supplements: 0 })
+    expect(S.customEx.some(x => /hip thrust/i.test(x.n))).toBe(false)     // not even the inactive program\'s custom exercises
+  })
+  it('the coach gets the other programs as routines, own targets and list; once, never over his own', () => {
+    const c = convertTracker(payload, [], { coach: true, supplements: supps })
+    expect(c.routines.map(r => r.name)).toEqual(['Push A'])
+    expect(c.otherRoutines.map(r => [r.id, r.name])).toEqual([['tt-b0-d1', 'Eski Blok · Gün 1']])
+    const S = clone(DEF)
+    const r1 = applyTrackerImport(S, c, { coach: true })
+    expect(r1).toMatchObject({ otherRoutines: 1, targets: true, supplements: 1 })
+    expect(S.routines.map(r => r.name)).toEqual(['Push A', 'Eski Blok · Gün 1'])
+    expect(S.myTargets.training).toEqual({ p: 200, c: 320, f: 70 })
+    expect(S.mySupplements[0].items[0].name).toBe('D3 + K2')
+    expect(S.customEx.some(x => /hip thrust/i.test(x.n))).toBe(true)      // the inactive program\'s exercise is usable
+    // run again (a later version, another device): nothing doubles
+    const r2 = applyTrackerImport(S, convertTracker(payload, S.customEx, { coach: true, supplements: supps }), { coach: true })
+    expect(r2).toMatchObject({ otherRoutines: 0, targets: false, supplements: 0 })
+    expect(S.routines).toHaveLength(2)
+    // and what he set here since is not replaced
+    const T = clone(DEF); T.myTargets = { training: { p: 1, c: 1, f: 1 } }; T.mySupplements = [{ id: 'g', label: 'Benim', items: [{ id: 'i', name: 'Kreatin', dose: '5 g' }] }]
+    applyTrackerImport(T, convertTracker(payload, [], { coach: true, supplements: supps }), { coach: true })
+    expect(T.myTargets.training.p).toBe(1); expect(T.mySupplements[0].label).toBe('Benim')
+  })
+  it('version 2 profiles import again to get these', () => {
+    expect(IMPORT_VERSION).toBe(3)
+    expect(importOutdated({ trackerImport: { at: 'x', v: 2 } })).toBe(true)
+  })
+})
+
+describe('verification of the coach\'s extras', () => {
+  it('counts the other programs\' routines', () => {
+    const payload = { activeProgramId: 'a', programs: [{ id: 'a', name: 'A', days: [{ id: 'x', label: 'X', exercises: [{ name: 'barbell bench press', sets: 3, reps: '8' }] }] }, { id: 'b', name: 'B', days: [{ id: 'y', label: 'Y', exercises: [{ name: 'barbell bench press', sets: 3, reps: '8' }] }] }] }
+    const conv = convertTracker(payload, [], { coach: true })
+    const S = clone(DEF)
+    expect(verifyImport(conv, S).rows.find(r => r.label === 'eski program rutini')).toMatchObject({ want: 1, got: 0, ok: false })
+    applyTrackerImport(S, conv, { coach: true })
+    expect(verifyImport(conv, S).rows.find(r => r.label === 'eski program rutini')).toMatchObject({ want: 1, got: 1, ok: true })
   })
 })

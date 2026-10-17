@@ -187,10 +187,10 @@ describe('tracker payload', () => {
       return base(url, init)
     } })
     await post('/api/login/password', { name: 'uye@x.com', password: 'dogru' })
-    expect(await firebaseApi('/api/tracker')).toEqual({ payload: '{"workouts":[]}', workoutTimers: { '2026-09-01': { totalSec: 3600 } }, mealLog: null })
+    expect(await firebaseApi('/api/tracker')).toEqual({ payload: '{"workouts":[]}', workoutTimers: { '2026-09-01': { totalSec: 3600 } }, mealLog: null, customSupplements: null })
     const ud = fb.calls.filter(c => c.url.includes('/userdata/'))
     expect(ud.every(c => !c.init.method || c.init.method === 'GET')).toBe(true)
-    expect(ud.some(c => c.url.includes('/userdata/U1?mask.fieldPaths=payload&mask.fieldPaths=workoutTimers&mask.fieldPaths=mealLog'))).toBe(true)
+    expect(ud.some(c => c.url.includes('/userdata/U1?mask.fieldPaths=payload&mask.fieldPaths=workoutTimers&mask.fieldPaths=mealLog&mask.fieldPaths=customSupplements'))).toBe(true)
   })
   it('answers null when the member has no tracker document', async () => {
     await post('/api/login/password', { name: 'uye@x.com', password: 'dogru' })

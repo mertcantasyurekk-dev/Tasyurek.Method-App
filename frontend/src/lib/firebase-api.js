@@ -734,12 +734,12 @@ export async function firebaseApi(path, init = {}) {
       // The old tracker's payload, for the one-way import (lib/tracker-import.js). Read with a
       // field mask; this file never writes to userdata/.
       const a = await idToken()
-      // payload, plus the two things the tracker keeps beside it: workout durations and the meal log.
-      const url = `${DOCS()}/userdata/${encodeURIComponent(a.uid)}?mask.fieldPaths=payload&mask.fieldPaths=workoutTimers&mask.fieldPaths=mealLog`
+      // payload, plus what the tracker keeps beside it: workout durations, the meal log, the supplement list.
+      const url = `${DOCS()}/userdata/${encodeURIComponent(a.uid)}?mask.fieldPaths=payload&mask.fieldPaths=workoutTimers&mask.fieldPaths=mealLog&mask.fieldPaths=customSupplements`
       const { r, body: d } = await jsonFetch(url, { headers: { Authorization: 'Bearer ' + a.idToken } })
       if (r.status === 404) return { payload: null }
       if (!r.ok) throw err(r.status, d?.error?.message || 'read failed')
-      return { payload: d?.fields?.payload?.stringValue || null, workoutTimers: fromFs(d?.fields?.workoutTimers) || null, mealLog: fromFs(d?.fields?.mealLog) || null }
+      return { payload: d?.fields?.payload?.stringValue || null, workoutTimers: fromFs(d?.fields?.workoutTimers) || null, mealLog: fromFs(d?.fields?.mealLog) || null, customSupplements: fromFs(d?.fields?.customSupplements) || null }
     }
     case 'GET /api/coach/members': {
       const all = await coachMembers(await asCoach())

@@ -61,11 +61,34 @@ export function readPayload(raw) {
 // imported by an older version is imported again on its next start (autoImportFromTracker), which is
 // safe — workouts merge by id, days and entries already here win — and brings the new kinds over.
 // 1: workouts, weights, programs, nutrition totals · 2: + measurements, cardio, supplements, notes,
-// durations, day types, this week's meals, prior bests, id-based workout merge.
-export const IMPORT_VERSION = 2
+// durations, day types, this week's meals, prior bests, id-based workout merge · 3: + (the coach's own
+// profile only) the other tracker programs as routines, own targets, own supplement list.
+export const IMPORT_VERSION = 3
+
+// The tracker's targets in this app's shape: training/rest macro sets, water, sleep, weekly goals.
+export function targetsFromPayload(payload) {
+  if (!payload || typeof payload !== 'object') return null
+  const cm = payload.customMacroTargets || {}, t = payload.targets || {}, wk = payload.customWeeklyTargets || {}
+  const n = (v, max) => { const x = parseFloat(String(v ?? '').replace(',', '.')); return isFinite(x) && x > 0 && x <= max ? Math.round(x * 10) / 10 : null }
+  const set = x => { if (!x) return null; const o = { p: n(x.protein, 500), c: n(x.carbs, 1000), f: n(x.fat, 300) }; return o.p && o.c && o.f ? o : null }
+  const out = { training: set(cm.trainingDay) || set(t), rest: set(cm.offDay), water: n(t.water, 10), sleep: n(t.sleep, 14),
+    workoutsPerWeek: n(wk.workoutsPerWeek, 14) && Math.round(n(wk.workoutsPerWeek, 14)), cardioSessionsPerWeek: n(wk.cardioSessionsPerWeek, 21) && Math.round(n(wk.cardioSessionsPerWeek, 21)),
+    cardioMinutesPerWeek: n(wk.cardioMinutesPerWeek, 1500) && Math.round(n(wk.cardioMinutesPerWeek, 1500)) }
+  return out.training || out.rest || out.workoutsPerWeek || out.cardioSessionsPerWeek || out.cardioMinutesPerWeek ? out : null
+}
+
+// The tracker's supplement groups ({ id, label, items: [{ id, name, dose, effect }] }), without the
+// effect text (this app's list has a name and a dose).
+export function cleanSupps(list) {
+  const t = (v, k) => String(v ?? '').trim().slice(0, k)
+  return (Array.isArray(list) ? list : []).map((g, gi) => ({
+    id: t(g?.id, 40) || 'g' + gi, label: t(g?.label, 80) || 'Takviyeler',
+    items: (Array.isArray(g?.items) ? g.items : []).map((i, ii) => ({ id: t(i?.id, 40) || `g${gi}i${ii}`, name: t(i?.name, 80), dose: t(i?.dose, 120) })).filter(i => i.name).slice(0, 30)
+  })).filter(g => g.items.length).slice(0, 12)
+}
 export const importOutdated = S => !S?.trackerImport || (Number(S.trackerImport.v) || 1) < IMPORT_VERSION
 
-export function convertTracker(payload, existingCustom = [], { stableIds = false, timers = null, mealLog = null, today = null } = {}) {
+export function convertTracker(payload, existingCustom = [], { stableIds = false, timers = null, mealLog = null, today = null, coach = false, supplements = null } = {}) {
   const custom = new Map()   // clean name -> custom exercise (existing or new)
   existingCustom.forEach(c => { if (c && c.n) custom.set(clean(c.n), c) })
   const fresh = []
@@ -87,7 +110,7 @@ export function convertTracker(payload, existingCustom = [], { stableIds = false
   const programs = Array.isArray(payload?.programs) ? payload.programs : []
   const program = programs.find(p => p && p.id === payload.activeProgramId) || programs[0] || null
   const slug = v => String(v ?? '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40)
-  const routines = (program?.days || []).filter(d => d && Array.isArray(d.exercises)).map((day, di) => {
+  const buildRoutines = (prog, stable) => (prog?.days || []).filter(d => d && Array.isArray(d.exercises)).map((day, di) => {
     const ex = day.exercises.map(e => {
       const id = exId(e?.name)
       if (!id) return null
@@ -105,9 +128,16 @@ export function convertTracker(payload, existingCustom = [], { stableIds = false
     const focus = String(day.focus || '').trim()
     // The coach's transfer uses ids that stay the same each time, so doing it again updates the same
     // routines (and the member's history stays attached to them).
-    const id = stableIds ? `tt-${slug(program.id) || 'p'}-${slug(day.id) || di}` : uid()
+    const id = stable ? `tt-${slug(prog.id) || 'p'}-${slug(day.id) || di}` : uid()
     return { id, name: focus ? `${label} — ${focus}` : label, emoji: 'barbell', ex }
   }).filter(r => r.ex.length)
+
+  const routines = buildRoutines(program, stableIds)
+  // The coach's own profile keeps the programs that are not active too, as routines in the Plan tab
+  // ("Program name · Day"), under the same stable ids the assignment uses.
+  const otherRoutines = coach
+    ? programs.filter(p => p && p !== program).flatMap(p => buildRoutines(p, true).map(r => ({ ...r, name: `${String(p.name || 'Program').trim()} · ${r.name}` })))
+    : []
 
   // Workouts, in the shape mergeImport takes.
   const workouts = (Array.isArray(payload?.workouts) ? payload.workouts : []).map((w, wi) => {
@@ -201,19 +231,23 @@ export function convertTracker(payload, existingCustom = [], { stableIds = false
   }
 
   // Custom exercises this import actually uses, that the profile does not have yet.
-  const used = new Set([...routines.flatMap(r => r.ex.map(e => e.id)), ...workouts.flatMap(w => w.entries.map(e => e.id))])
+  const used = new Set([...routines.flatMap(r => r.ex.map(e => e.id)), ...otherRoutines.flatMap(r => r.ex.map(e => e.id)), ...workouts.flatMap(w => w.entries.map(e => e.id))])
   const customEx = fresh.filter(c => used.has(c.id))
 
   const measurements = measurementsFromTracker(payload?.measurements)
   const { cardio, supps } = dailyFromTracker(payload)
-  return { routines, workouts, bodyweight, nutrition, measurements, cardio, supps, customEx, linked, programName: program?.name || '', priorBests: prior.length }
+  // The coach's own targets and supplement list (a member's come from the coach).
+  const myTargets = coach ? targetsFromPayload(payload) : null
+  const mySupplements = coach ? cleanSupps(supplements) : []
+  return { routines, otherRoutines, workouts, bodyweight, nutrition, measurements, cardio, supps, customEx, linked, myTargets, mySupplements,
+    programName: program?.name || '', priorBests: prior.length }
 }
 
 /**
  * Apply a conversion to a draft state (call inside store.update). Routines only come over the
  * first time; history and weights can be re-imported safely at any time (days already here win).
  */
-export function applyTrackerImport(S, conv, { now = new Date().toISOString() } = {}) {
+export function applyTrackerImport(S, conv, { now = new Date().toISOString(), coach = false } = {}) {
   S.customEx = [...(S.customEx || []), ...conv.customEx]
   const first = !S.trackerImport
   let routines = 0
@@ -275,8 +309,18 @@ export function applyTrackerImport(S, conv, { now = new Date().toISOString() } =
   for (const [d, day] of Object.entries(conv.cardio || {})) { if (!S.cardio[d]) { S.cardio[d] = { ...day, items: day.items.map(x => ({ ...x })) }; cardioDays++ } }
   S.supps = S.supps && typeof S.supps === 'object' ? S.supps : {}
   for (const [d, day] of Object.entries(conv.supps || {})) if (!S.supps[d]) S.supps[d] = { on: { ...day.on }, _ts: day._ts }
+  // The coach's own profile: the programs that are not active (as routines, only those not here yet),
+  // targets and supplement list (only where this profile has none of its own).
+  let otherRoutines = 0, targets = false, supplements = 0
+  if (coach) {
+    const haveR = new Set((S.routines || []).map(r => r?.id))
+    const freshR = (conv.otherRoutines || []).filter(r => !haveR.has(r.id))
+    if (freshR.length) { S.routines = [...(S.routines || []), ...freshR.map(r => ({ ...r, ex: r.ex.map(e => ({ ...e })) }))]; otherRoutines = freshR.length }
+    if (conv.myTargets && !S.myTargets) { S.myTargets = conv.myTargets; targets = true }
+    if (conv.mySupplements?.length && !(S.mySupplements || []).length) { S.mySupplements = conv.mySupplements; supplements = conv.mySupplements.reduce((a, g) => a + g.items.length, 0) }
+  }
   S.trackerImport = { at: now, v: IMPORT_VERSION, ...(first ? {} : { firstAt: S.trackerImport.firstAt || S.trackerImport.at }) }
-  return { routines, workouts: w.added, workoutsSkipped: w.skipped, weights: b.added, days, measurements: meas, cardioDays, customs: conv.customEx.length }
+  return { routines, otherRoutines, targets, supplements, workouts: w.added, workoutsSkipped: w.skipped, weights: b.added, days, measurements: meas, cardioDays, customs: conv.customEx.length }
 }
 
 // Days of the week for n routines in order, when the tracker had no weekday for them (openGym keys:
@@ -320,7 +364,8 @@ export function verifyImport(conv, S) {
     ['ölçüm', (conv.measurements || []).length, (conv.measurements || []).filter(m => meas.has(m.d)).length],
     ['beslenme günü', nutDays.length, nutDays.filter(n => food(n.d)).length],
     ['kardiyo günü', Object.keys(conv.cardio || {}).length, Object.keys(conv.cardio || {}).filter(cardio).length],
-    ['günlük not', (conv.nutrition || []).filter(n => n.note).length, (conv.nutrition || []).filter(n => n.note && S?.dayNotes?.[n.d]?.text).length]
+    ['günlük not', (conv.nutrition || []).filter(n => n.note).length, (conv.nutrition || []).filter(n => n.note && S?.dayNotes?.[n.d]?.text).length],
+    ['eski program rutini', (conv.otherRoutines || []).length, (conv.otherRoutines || []).filter(r => (S?.routines || []).some(y => y?.id === r.id)).length]
   ].filter(r => r[1] > 0)
   return { rows: rows.map(([label, want, got]) => ({ label, want, got, ok: got >= want })), ok: rows.every(r => r[2] >= r[1]) }
 }

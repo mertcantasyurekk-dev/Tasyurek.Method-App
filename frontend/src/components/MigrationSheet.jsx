@@ -28,6 +28,7 @@ function previewOf(payload, memberCustom, extra = {}, state = null) {
     workouts: c.workouts.length, range: range(c.workouts),
     weights: c.bodyweight.length, nutrition: c.nutrition.length, measurements: c.measurements.length,
     cardio: Object.keys(c.cardio || {}).length,
+    otherPrograms: (c.otherRoutines || []).length, hasTargets: !!c.myTargets, supplements: (c.mySupplements || []).reduce((a, g) => a + g.items.length, 0),
     notes: c.nutrition.filter(n => n.note).length, durations: c.workouts.filter(w => w.end > w.start).length, priorBests: c.priorBests || 0,
     unmatched: [...new Set(c.customEx.map(x => x.n))]
   }
@@ -39,6 +40,7 @@ function Counts({ p }) {
     p.program ? `Program „${p.program}" (${p.days} gün)` : 'Program yok',
     `${p.workouts} antrenman${p.range ? ` (${p.range})` : ''}`,
     `${p.weights} kilo`, `${p.nutrition} gün beslenme`, `${p.measurements} ölçüm`, `${p.cardio} gün kardiyo`,
+    p.otherPrograms ? `${p.otherPrograms} eski program rutini` : '', p.hasTargets ? 'hedefler' : '', p.supplements ? `${p.supplements} takviye` : '',
     p.notes ? `${p.notes} günlük not` : '', p.durations ? `${p.durations} antrenman süresi` : '', p.priorBests ? `${p.priorBests} önceki rekor` : ''
   ].filter(Boolean)
   return <>
@@ -62,7 +64,7 @@ function Migration({ members, onDone, close }) {
   useEffect(() => {
     let on = true
     ;(async () => {
-      try { const r = await api('/api/tracker'); if (on) setMine(previewOf(readPayload(r.payload), useStore.getState().S.customEx || [], { timers: r.workoutTimers, mealLog: r.mealLog, today: todayISO() }, useStore.getState().S)) } catch { if (on) setMine(null) }
+      try { const r = await api('/api/tracker'); if (on) setMine(previewOf(readPayload(r.payload), useStore.getState().S.customEx || [], { timers: r.workoutTimers, mealLog: r.mealLog, today: todayISO(), coach: true, supplements: r.customSupplements }, useStore.getState().S)) } catch { if (on) setMine(null) }
       const out = []
       for (const mm of members) {
         try {
