@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { coachedNow } from './lib/coached.js'   // Taşyürek: coached members only log
+import { MORNING_WEIGH, recentWeight } from './lib/morning-weigh.js'   // Taşyürek: weigh in on Home, not before training
 import { useStore } from './store/useStore.js'
 import { useUI } from './store/useUI.js'
 import { EXDB, EXIDX, BODYPARTS, isCardio, isBodyweightEq, allExercises, equipmentOf, smOf, searchExercises, exOr, isAssisted, betterWeight, beatsWeight } from './lib/exercises.js'
@@ -2170,6 +2171,7 @@ export function WorkoutRow({ w, onClick }) {
 export function startFlow(routineIds) {
   // The weigh-in is a setting (Settings → During a workout, issue #137): off goes straight
   // into the session with no body weight on it, same as "Start without weighing in".
+  if (MORNING_WEIGH) { beginWorkout(routineIds, recentWeight(S(), todayISO())); return }   // Taşyürek
   if (S().weighIn === false) { beginWorkout(routineIds, null); return }
   bwSheet({ required: true, onDone: bw => beginWorkout(routineIds, bw) })
 }
@@ -2285,7 +2287,7 @@ function beginBackfill({ iso, time, durationMin, routineIds, replaceId }) {
       id: uid(), d: iso, start,
       routineIds: rids,
       name: routines.length ? deriveSessionName(routines.map(r => r.name)) : t('Freestyle'),
-      bw: null, cur: 0, entries,
+      bw: MORNING_WEIGH ? recentWeight(st, iso) : null, cur: 0, entries,   // Taşyürek: the weigh-in of that week
       backfill: { durationMin, replaceId: replaceId || null },
       // Same layout snapshot as a live session (see beginWorkout).
       workoutView: st.workoutView || 'cards',

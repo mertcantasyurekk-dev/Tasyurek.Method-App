@@ -71,6 +71,14 @@ Koç panelinde üye detayı (`views/CoachWeekly.jsx`, biçimler `lib/coach360.js
 - **Tracker'dan aktar** (bir kez, taraf boşken): eski `coachNote`, `coachGoal`, `coachReports`,
   `weeklyRevisions` (orijinal tarihleriyle) gelir; `userdata`'ya yazılmaz.
 
+## Sabah tartısı (antrenman öncesi tartı yok)
+
+Firebase derlemesinde herkes için (`lib/morning-weigh.js`). Antrenman öncesi tartı (yemek/su sonrası) haftalık
+ortalamayı bozduğu için Başlat'ta tartı penceresi açılmaz; Ayarlar'daki "Antrenman öncesi tartı" ve "Vücut ağırlığı
+kartı" anahtarları gizlidir. Kilo sabah Ana sayfadaki karttan girilir; o gün girilmediyse kart altın çerçeveyle
+"Bugün henüz tartılmadın" der (dokununca tartı penceresi). Antrenmana son 7 gün içindeki son kilo otomatik eklenir
+(geçmişe kayıtta o günün 7 günü), yoksa kilosuz başlar.
+
 ## Kardiyo, haftalık hedefler, takviyeler, günün notu
 
 `lib/daily.js`, `lib/daily-message.js`, kartlar `components/DailyCards.jsx`.

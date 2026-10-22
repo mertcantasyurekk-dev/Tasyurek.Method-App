@@ -405,20 +405,20 @@ export default function Settings() {
         <Switch checked={S.checkIn !== false} onChange={v => update(s => { s.checkIn = v })} />
       </Row></>}
       {/* The Home summary is optional; hiding it leaves weight logging, history and Stats intact. */}
-      <Row icon="scale" iconTint="var(--green)" title={t('Body weight')}
+      {!FIREBASE && <Row icon="scale" iconTint="var(--green)" title={t('Body weight')}
         subtitle={t('Show the body weight card on Home.')}>
         <Switch checked={S.showWeightCard !== false} onChange={v => update(s => { s.showWeightCard = v })} />
-      </Row>
+      </Row>}   {/* Taşyürek: the card is where the morning weigh-in happens, so it always shows */}
     </Section>
 
     {/* ---------- during a workout ---------- */}
     <Section title={t('During a workout')} footer={wakeOK ? t('The screen stays on while a workout is running, so you don’t have to unlock your phone between sets.') : null}>
       {/* The quick weigh-in that opens on Start (sheets.jsx startFlow, issue #137); off skips straight
           to the session. Home and Stats still log weight by hand. */}
-      <Row icon="scale" iconTint="var(--green)" title={t('Weigh in before workouts')}
+      {!FIREBASE && <Row icon="scale" iconTint="var(--green)" title={t('Weigh in before workouts')}
         subtitle={t('Asks for your body weight when a workout starts. Off starts the session straight away.')}>
         <Switch checked={S.weighIn !== false} onChange={v => update(s => { s.weighIn = v })} />
-      </Row>
+      </Row>}   {/* Taşyürek: weigh-ins are taken on Home in the morning */}
       {/* One exercise at a time (cards with Prev/Next), the whole session stacked as a
           scrollable list, or that list stripped to just names and set rows (compact).
           Legacy/unknown values read as cards. The running session can override this from

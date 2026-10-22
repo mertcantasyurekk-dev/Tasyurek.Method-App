@@ -13,6 +13,7 @@ import MeasurementsCard from '../components/MeasurementsCard.jsx'
 import { DailyMessageCard, WeekCard, SupplementsCard } from '../components/DailyCards.jsx'
 import { autoImportFromTracker } from '../components/TrackerImport.jsx'
 import MembershipCard from '../components/MembershipCard.jsx'
+import { MORNING_WEIGH, weighedOn } from '../lib/morning-weigh.js'
 import { bwSheet, goalSheet, dayOverrideSheet, calendarSheet, startFlow, starterPlanSheet, bwDeltaColor, weighInsSheet } from '../sheets.jsx'
 import LineChart from '../components/LineChart.jsx'
 import Icon from '../components/Icon.jsx'
@@ -185,7 +186,8 @@ export default function Home() {
       </div>
     )}
 
-    {S.showWeightCard !== false && <div className="card">
+    {(MORNING_WEIGH || S.showWeightCard !== false) && <div className="card"
+      style={MORNING_WEIGH && !weighedOn(S, todayISO()) ? { boxShadow: 'inset 0 0 0 1.5px var(--acc)' } : undefined}>
       <div className="row between bw-head" style={{ marginBottom: 6 }}>
         <h2 style={{ margin: 0 }}>{t('Body weight')}</h2>
         <div className="row" style={{ gap: 8 }}>
@@ -193,6 +195,17 @@ export default function Home() {
           <Button size="sm" icon="plus" onClick={() => bwSheet()}>{t('Log')}</Button>
         </div>
       </div>
+      {/* Taşyürek: the morning weigh-in lives here; until it is in, the card says so. */}
+      {MORNING_WEIGH && !weighedOn(S, todayISO()) && <div className="row" {...tappable(() => bwSheet())}
+        style={{ gap: 10, padding: '9px 11px', margin: '2px 0 10px', borderRadius: 10, cursor: 'pointer',
+          background: 'color-mix(in srgb,var(--acc) 14%,transparent)' }}>
+        <Icon name="scale" style={{ color: 'var(--acc)', fontSize: 18 }} />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 600 }}>Bugün henüz tartılmadın</div>
+          <div className="small muted">Sabah, kahvaltıdan önce tartıl. Antrenmana bu kilo eklenir.</div>
+        </div>
+        <Icon name="chevronRight" className="chev" style={{ marginInlineStart: 'auto' }} />
+      </div>}
       {bw ? <>
         <div className="row" style={{ gap: 8, alignItems: 'baseline' }}>
           <div className="big">{fmtNum(bw.w)} <span className="muted" style={{ fontSize: '1rem' }}>{S.unit}</span></div>
@@ -216,7 +229,7 @@ export default function Home() {
         <div className="row" style={{ justifyContent: 'flex-end', marginTop: 4 }}>
           <Button size="sm" variant="ghost" trailingIcon="chevronRight" onClick={weighInsSheet}>{t('All weigh-ins')}</Button>
         </div>
-      </> : <div className="muted small">{S.weighIn === false
+      </> : <div className="muted small">{MORNING_WEIGH ? 'Henüz kayıt yok. Her sabah tartılarak eğrini başlat.' : S.weighIn === false
         ? t('No entries yet — log your weight to start the curve.')
         : t("No entries yet — log your weight to start the curve. It's also asked before every workout.")}</div>}
     </div>}
