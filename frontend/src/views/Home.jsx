@@ -12,6 +12,7 @@ import { maybeAutoBackup } from '../components/Backup.jsx'
 import MeasurementsCard from '../components/MeasurementsCard.jsx'
 import { DailyMessageCard, WeekCard, SupplementsCard } from '../components/DailyCards.jsx'
 import { autoImportFromTracker } from '../components/TrackerImport.jsx'
+import { applyPendingRestore } from '../components/Restore.jsx'
 import MembershipCard from '../components/MembershipCard.jsx'
 import { MORNING_WEIGH, weighedOn } from '../lib/morning-weigh.js'
 import { bwSheet, goalSheet, dayOverrideSheet, calendarSheet, startFlow, starterPlanSheet, bwDeltaColor, weighInsSheet } from '../sheets.jsx'
@@ -31,6 +32,7 @@ export default function Home() {
   useEffect(() => { if (FIREBASE && user?.admin) maybeAutoBackup() }, [user?.admin])
   // Taşyürek: the first time in, the old tracker's history comes over by itself.
   useEffect(() => { if (FIREBASE && user) autoImportFromTracker() }, [user?.id])
+  useEffect(() => { if (FIREBASE && user && !user.admin) applyPendingRestore() }, [user?.id])   // Taşyürek: a restore the coach left
   const [weekOffset, setWeekOffset] = useState(0)
 
   const today = new Date()

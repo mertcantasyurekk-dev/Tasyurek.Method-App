@@ -14,6 +14,7 @@
 import { compactNutrition } from './nutrition-core.js'   // the weekly seal: meals of past weeks are never stored
 import { buildSummary } from './member-summary.js'      // the ~1 KB the coach panel reads instead of the state
 import { cleanMembership } from './membership.js'
+import { combine as combineRestore, COACH_PARTS } from './restore-core.js'   // Taşyürek: restore from a backup
 
 export const FIREBASE = import.meta.env?.VITE_FIREBASE === '1'
 
@@ -627,6 +628,111 @@ async function listBackups(a) {
     .sort((x, y) => (x.id < y.id ? 1 : -1))
 }
 
+/* ------------------------------------------------------------ restore -------------------------- */
+// Add-only restore from one of this app's backups (lib/restore.js decides what is missing).
+// The coach reads the backup (all parts) and either writes restore/{uid} for a member — the
+// member's own app adds the records and deletes the request, since the coach cannot write their
+// ogstate — or puts the chosen coach fields (coachplan / coachnotes) back as the backup had them.
+const restoreUrl = uid => `${DOCS()}/restore/${encodeURIComponent(uid)}`
+const MAX_RESTORE_BYTES = 900 * 1024
+
+async function readBackup(a, id) {
+  const get = async x => {
+    const { r, body } = await jsonFetch(backupUrl(x), { headers: { Authorization: 'Bearer ' + a.idToken } })
+    if (!r.ok) throw err(r.status, `Yedek okunamadı (${x}): ${body?.error?.message || r.status}`)
+    return body.fields || {}
+  }
+  const f = await get(id)
+  if (f.kind?.stringValue !== 'og') throw err(400, 'Bu, uygulamanın yedeği değil')
+  let data
+  try { data = JSON.parse(f.data?.stringValue || '') } catch { throw err(500, 'Yedek bozuk: ' + id) }
+  data.collections = data.collections || {}
+  if (f.split?.booleanValue) {
+    for (const pv of f.parts?.arrayValue?.values || []) {
+      const pf = await get(pv.stringValue)
+      let part
+      try { part = JSON.parse(pf.data?.stringValue || '') } catch { throw err(500, 'Yedek parçası bozuk: ' + pv.stringValue) }
+      for (const [c, docs] of Object.entries(part.collections || {})) data.collections[c] = { ...(data.collections[c] || {}), ...docs }
+    }
+  }
+  // What the restore screen needs: per member, their state, the coach's fields, a name.
+  const C = data.collections
+  const uids = [...new Set([...Object.keys(C.ogstate || {}), ...Object.keys(C.coachplan || {}), ...Object.keys(C.coachnotes || {})])]
+  const members = uids.map(uid => {
+    const og = C.ogstate?.[uid] || {}, ud = C.userdata?.[uid] || {}
+    const email = og.email?.stringValue || ud.email?.stringValue || ''
+    return {
+      uid, email, name: ud.displayName?.stringValue || email.split('@')[0] || uid,
+      state: parseState(og), plan: C.coachplan?.[uid] || null, notes: C.coachnotes?.[uid] || null
+    }
+  })
+  return { id, day: f.day?.stringValue || null, createdAt: f.createdAt?.timestampValue || data.createdAt || null, members }
+}
+
+// Leaves the missing records for the member's app. A request still waiting is kept and joined.
+async function coachPutRestore(a, body) {
+  const uid = String(body?.uid || '')
+  if (!uid) throw err(400, 'uid required')
+  if (uid === a.uid) throw err(400, 'Kendi verin doğrudan geri yüklenir')
+  const { r: r0, body: b0 } = await jsonFetch(restoreUrl(uid), { headers: { Authorization: 'Bearer ' + a.idToken } })
+  if (!r0.ok && r0.status !== 404) throw err(r0.status, 'restore okunamadı: ' + (b0?.error?.message || r0.status))
+  let prev = null
+  if (r0.ok) { try { prev = JSON.parse(b0.fields?.data?.stringValue || 'null') } catch { prev = null } }
+  const data = prev ? combineRestore(prev, body.data) : body.data
+  const text = JSON.stringify(data)
+  if (text.length > MAX_RESTORE_BYTES) throw err(413, 'Geri yüklenecek kayıtlar tek seferde çok büyük; daha az tür seç')
+  const pre = r0.ok ? 'currentDocument.updateTime=' + encodeURIComponent(b0.updateTime) : 'currentDocument.exists=false'
+  const { r, body: res } = await jsonFetch(`${restoreUrl(uid)}?${pre}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + a.idToken },
+    body: JSON.stringify({ fields: {
+      data: { stringValue: text }, from: { stringValue: String(body.from || '') },
+      at: { timestampValue: new Date().toISOString() }, by: { stringValue: a.email || '' }
+    } })
+  })
+  if (!r.ok) {
+    if (r.status === 400 && /FAILED_PRECONDITION/.test(res?.error?.status || '')) throw err(409, 'Bu arada değişti, tekrar dene')
+    throw err(r.status, 'restore yazılamadı: ' + (res?.error?.message || r.status))
+  }
+  return { ok: true, waiting: !!prev }
+}
+
+// The chosen coach fields, exactly as the backup had them (a field the backup lacks is cleared).
+async function coachRestoreCoachSide(a, body) {
+  const uid = String(body?.uid || '')
+  if (!uid) throw err(400, 'uid required')
+  const parts = COACH_PARTS.filter(p => (body.parts || []).includes(p.key))
+  const planFields = parts.filter(p => p.doc === 'coachplan').flatMap(p => p.fields)
+  const noteFields = parts.filter(p => p.doc === 'coachnotes').flatMap(p => p.fields)
+  const from = (src, fields) => Object.fromEntries(fields.filter(f => src?.[f]).map(f => [f, src[f]]))
+  if (planFields.length) {
+    const cur = await readPlan(a, uid)
+    const pre = cur.exists ? 'currentDocument.updateTime=' + encodeURIComponent(cur.updateTime) : 'currentDocument.exists=false'
+    const mask = [...planFields, 'rev', 'updatedAt', 'by'].map(f => 'updateMask.fieldPaths=' + f).join('&')
+    const { r, body: res } = await jsonFetch(`${planUrl(uid)}?${mask}&${pre}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + a.idToken },
+      body: JSON.stringify({ fields: { ...from(body.plan, planFields), rev: { integerValue: String(cur.rev + 1) }, updatedAt: { timestampValue: new Date().toISOString() }, by: { stringValue: a.email || '' } } })
+    })
+    if (!r.ok) {
+      if (r.status === 400 && /FAILED_PRECONDITION/.test(res?.error?.status || '')) throw err(409, 'Bu arada başka bir değişiklik oldu, tekrar dene')
+      throw err(r.status, 'Program belgesi yazılamadı: ' + (res?.error?.message || r.status))
+    }
+  }
+  if (noteFields.length) {
+    const cur = await readNotes(a, uid)
+    const pre = cur.exists ? 'currentDocument.updateTime=' + encodeURIComponent(cur.updateTime) : 'currentDocument.exists=false'
+    const mask = noteFields.map(f => 'updateMask.fieldPaths=' + f).join('&')
+    const { r, body: res } = await jsonFetch(`${notesUrl(uid)}?${mask}&${pre}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + a.idToken },
+      body: JSON.stringify({ fields: from(body.notes, noteFields) })
+    })
+    if (!r.ok) {
+      if (r.status === 400 && /FAILED_PRECONDITION/.test(res?.error?.status || '')) throw err(409, 'Bu arada başka bir değişiklik oldu, tekrar dene')
+      throw err(r.status, 'Koç notları yazılamadı: ' + (res?.error?.message || r.status))
+    }
+  }
+  return { ok: true }
+}
+
 // A member's supplement list: groups of items, the tracker's customSupplements shape.
 export function cleanSupplements(list) {
   const s = (v, n) => String(v ?? '').trim().slice(0, n)
@@ -777,6 +883,31 @@ export async function firebaseApi(path, init = {}) {
       const meta = await readBackupMeta(a)
       if (!body?.force && meta?.lastDay && daysBetween(meta.lastDay, localIso()) < BACKUP_EVERY_DAYS) return { skipped: true, meta }
       return { skipped: false, ...(await writeBackup(a)) }
+    }
+    case 'GET /api/coach/backup': {
+      const id = new URLSearchParams(path.split('?')[1] || '').get('id')
+      if (!id) throw err(400, 'id required')
+      return readBackup(await asCoach(), id)
+    }
+    case 'PUT /api/coach/restore':
+      return coachPutRestore(await asCoach(), body)
+    case 'PUT /api/coach/restore-coach':
+      return coachRestoreCoachSide(await asCoach(), body)
+    case 'GET /api/restore': {
+      // A restore the coach left for this member (components/Restore.jsx applies it).
+      const a = await idToken()
+      const { r, body: d } = await jsonFetch(restoreUrl(a.uid), { headers: { Authorization: 'Bearer ' + a.idToken } })
+      if (r.status === 404) return { request: null }
+      if (!r.ok) throw err(r.status, d?.error?.message || 'restore read failed')
+      let data = null
+      try { data = JSON.parse(d.fields?.data?.stringValue || 'null') } catch { data = null }
+      return { request: data ? { data, from: d.fields?.from?.stringValue || '', at: d.fields?.at?.timestampValue || null, updateTime: d.updateTime } : null }
+    }
+    case 'DELETE /api/restore': {
+      const a = await idToken()
+      const { r, body: d } = await jsonFetch(restoreUrl(a.uid), { method: 'DELETE', headers: { Authorization: 'Bearer ' + a.idToken } })
+      if (!r.ok && r.status !== 404) throw err(r.status, d?.error?.message || 'restore delete failed')
+      return { ok: true }
     }
     case 'GET /api/coach/tracker-payload': {
       // A member's tracker payload, for transferring their program. Read-only (field mask).

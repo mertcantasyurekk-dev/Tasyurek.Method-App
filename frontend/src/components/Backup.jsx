@@ -5,6 +5,7 @@ import { api } from '../lib/api.js'
 import { useUI } from '../store/useUI.js'
 import { fmtDate } from '../lib/format.js'
 import { Section, Row, Button } from './ui.jsx'
+import { restoreSheet } from './Restore.jsx'
 
 const ui = () => useUI.getState()
 const toast = m => ui().toast(m)
@@ -61,10 +62,11 @@ function BackupSheet({ close }) {
     <Button icon="download" disabled={!!busy} onClick={dl}>{busy === 'dl' ? 'Hazırlanıyor…' : 'Tam yedeği bilgisayarıma indir'}</Button>
     <div style={{ height: 14 }} />
     <Section title={`Firestore'daki yedekler${info ? ` (${info.backups.length})` : ''}`}>
-      {info?.backups.length ? info.backups.map(b => <Row key={b.id} title={b.day} subtitle={`${when(b.createdAt)} · ${kb(b.bytes)}${b.split ? ' · parçalı' : ''}`} />)
+      {info?.backups.length ? info.backups.map(b => <Row key={b.id} title={b.day} subtitle={`${when(b.createdAt)} · ${kb(b.bytes)}${b.split ? ' · parçalı' : ''}`}
+        accessory="chevron" onClick={() => restoreSheet(b)} />)
         : <Row title={info ? 'Henüz yedek yok' : 'Yükleniyor…'} />}
     </Section>
-    <div className="small dim" style={{ margin: '0 2px 12px' }}>Geri yükleme gerektiğinde bu yedeklerden yapılır; Firestore Console'daki backups koleksiyonunda ya da indirdiğin dosyada durur.</div>
+    <div className="small dim" style={{ margin: '0 2px 12px' }}>Bir yedeğe dokun: önizleyip eksik kayıtları geri yükleyebilirsin. Geri yükleme sadece ekler, hiçbir şeyin üzerine yazmaz.</div>
     <Button variant="ghost" className="dim" onClick={close}>Kapat</Button>
   </>
 }

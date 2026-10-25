@@ -193,7 +193,18 @@ Koç panelinde **Yedekler** (`components/Backup.jsx`, sunucu tarafı `firebase-a
   Son 15 yedek tutulur; tracker'ın `backup_…` yedeklerine dokunulmaz. `backups/_og_meta` son yedeği tutar.
   Yeni Firestore kuralı gerekmez (`backups/{id}` zaten koça açık).
 - **Manuel**: "Şimdi yedekle" ve "Tam yedeği bilgisayarıma indir" (JSON).
-- Geri yükleme henüz otomatik değil: yedek dosyasından/belgesinden elle yapılır.
+- **Geri yükleme** (Yedekler → bir yedeğe dokun → profil): `lib/restore.js`, `lib/restore-core.js`,
+  `components/Restore.jsx`. Önizleme tür tür "yedekte X · eksik Y". Kayıtlar **sadece eklenir**: üyede olmayan
+  antrenman (kimlik), kilo / beslenme / ölçü / takviye / not günü (tarih), kardiyo kalemi (kimlik). Var olanın üzerine
+  yazılmaz, hiçbir şey silinmez; üyenin bilerek sildiği ölçü günü ve kardiyo kalemi (silme işareti) geri gelmez.
+  Aynı istek iki kez uygulanırsa bir şey çoğalmaz. Parçalı yedekler parçalarıyla okunur; birim farkı çevrilir.
+  - Üyenin kayıtları: koç `restore/{uid}`'ye yazar (bekleyen istek varsa birleşir), üyenin uygulaması açılışta,
+    sunucu verisi geldikten sonra ekler; istek ancak profil sunucuya yazıldıktan sonra silinir. Koç üyenin
+    `ogstate`'ine yazmaz. Koçun kendi profili hemen eklenir.
+  - Koç verileri (program, hedefler, mesajlar, takviye listesi, üyelik, not/hedef/raporlar): seçilenler yedektekiyle
+    **değiştirilir** (yedekte olmayan alan temizlenir), `rev` artar.
+  - Kural: `restore/{uid}` bloğu (koç oluşturur/günceller, üye okur/siler) — Bölüm "Firestore kuralı".
+  - Tracker'ın `userdata`'sı geri yüklenmez.
 
 ## Beslenme (günlük takip)
 
@@ -270,6 +281,16 @@ Koç planı için ayrıca:
     match /coachplan/{uid} {
       allow get: if request.auth != null && (request.auth.uid == uid || isCoach());
       allow list, create, update, delete: if isCoach();
+    }
+```
+
+Yedekten geri yükleme için ayrıca (koç oluşturur, üye okur ve siler):
+
+```
+    match /restore/{uid} {
+      allow get: if request.auth != null && (request.auth.uid == uid || isCoach());
+      allow create, update: if isCoach();
+      allow delete: if request.auth != null && (request.auth.uid == uid || isCoach());
     }
 ```
 
